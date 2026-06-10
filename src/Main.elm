@@ -3,7 +3,7 @@ module Main exposing (main)
 import Browser
 import Cmd.Extra exposing (add)
 import Dict exposing (Dict)
-import Html exposing (Html, br, button, div, i, main_, p, select, text, textarea)
+import Html exposing (Html, br, button, div, i, main_, p, pre, select, text, textarea)
 import Html.Attributes exposing (checked, rows, style, type_, value)
 import Html.Events exposing (onCheck, onClick, onInput)
 import Http
@@ -104,7 +104,16 @@ view model =
             [ style "flex" "1" ]
             [ case model.json of
                 Err e ->
-                    text (Debug.toString e)
+                    e
+                        |> Json.Decode.errorToString
+                        |> String.split "\n"
+                        |> List.map
+                            (\line ->
+                                p
+                                    [ style "font-family" "monospace" ]
+                                    [ text line ]
+                            )
+                        |> Html.div []
 
                 Ok json ->
                     viewMatch (matchesHelp [] model.type_ json)

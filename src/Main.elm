@@ -1,15 +1,20 @@
 module Main exposing (main)
 
 import Browser
+import Cmd.Extra exposing (add)
 import Dict exposing (Dict)
-import Html exposing (Html, div, main_, select, textarea)
+import Html exposing (Html, div, i, main_, select, textarea)
 import Html.Attributes exposing (checked, rows, style, type_, value)
-import Html.Events exposing (onCheck, onInput)
+import Html.Events exposing (onCheck, onClick, onInput)
 import Http
 import Json.Decode exposing (Decoder)
 import Json.Encode
 import List.Extra
+import Maybe.Extra
+import Regex exposing (Regex)
+import Result.Extra
 import Theme
+import Type exposing (AdditionalProperties(..), Type(..))
 
 
 type alias Model =
@@ -23,24 +28,6 @@ type Msg
     = Input String
     | Type Type
     | DownloadedJson (Result Http.Error Json)
-
-
-type Type
-    = TList Type
-    | TString { pattern : Maybe String }
-    | TInteger
-    | TNumber
-    | TBoolean
-    | TNull
-    | TObject
-        { fields : List ( String, Type )
-        , additionalProperties : AdditionalProperties
-        }
-
-
-type AdditionalProperties
-    = AdditionalPropertiesAllowed (Maybe Type)
-    | AdditionalPropertiesNotAllowed
 
 
 main : Program () Model Msg
@@ -107,150 +94,236 @@ view model =
             []
         , div
             [ style "flex" "1" ]
-            [ Html.map Type (typeEditor model.type_) ]
+            [ Html.map Type (Type.editor model.type_) ]
+        , div
+            [ style "flex" "1" ]
+            [ case model.json of
+                Err e ->
+                    Html.text (Debug.toString e)
+
+                Ok json ->
+                    viewMatch (matches model.type_ json)
+            ]
         ]
 
 
-typeEditor : Type -> Html Type
-typeEditor t =
+viewMatch : Result (Html Type) () -> Html Msg
+viewMatch match =
+    case match of
+        Ok () ->
+            Html.text "All matches"
+
+        Err e ->
+            Html.map Type e
+
+
+matches : Type -> Json -> Result (Html Type) ()
+matches t j =
     let
-        default =
-            { obj = Nothing
-            , list = Nothing
-            , string = Nothing
-            }
+        mismatch : Maybe Type -> Result (Html Type) ()
+        mismatch maybeSuggested =
+            let
+                suggested : Type
+                suggested =
+                    case maybeSuggested of
+                        Just s ->
+                            s
 
-        ( extracted, additional ) =
-            case t of
-                TObject obj ->
-                    let
-                        fieldsViews : List (Html Type)
-                        fieldsViews =
-                            List.indexedMap viewField obj.fields
-
-                        viewField : Int -> ( String, Type ) -> Html Type
-                        viewField i ( fieldName, fieldType ) =
-                            typeEditor fieldType
-                                |> Html.map
-                                    (\newType ->
-                                        TObject
-                                            { obj
-                                                | fields =
-                                                    List.Extra.setAt i
-                                                        ( fieldName, newType )
-                                                        obj.fields
-                                            }
-                                    )
-
-                        additionalPropertiesViews : List (Html Type)
-                        additionalPropertiesViews =
-                            [ Theme.select
-                                [ ( "No additional properties"
-                                  , TObject
-                                        { obj
-                                            | additionalProperties = AdditionalPropertiesNotAllowed
-                                        }
-                                  )
-                                , ( "Additional properties allowed (any)"
-                                  , TObject
-                                        { obj
-                                            | additionalProperties = AdditionalPropertiesAllowed Nothing
-                                        }
-                                  )
-                                , ( "Additional properties allowed (specific)"
-                                  , TObject
-                                        { obj
-                                            | additionalProperties =
-                                                AdditionalPropertiesAllowed
-                                                    (case obj.additionalProperties of
-                                                        AdditionalPropertiesAllowed (Just v) ->
-                                                            Just v
-
-                                                        AdditionalPropertiesAllowed Nothing ->
-                                                            Nothing
-
-                                                        AdditionalPropertiesNotAllowed ->
-                                                            Nothing
-                                                    )
-                                        }
-                                  )
-                                ]
-                                t
-                            ]
-                    in
-                    ( { default | obj = Just obj }
-                    , fieldsViews ++ additionalPropertiesViews
+                        Nothing ->
+                            suggestType j
+            in
+            Html.div
+                [ style "padding" "2px"
+                , style "border" "1px solid gray"
+                ]
+                [ Html.button [ onClick suggested ] [ Html.text ("Use " ++ Type.toString suggested ++ " instead") ]
+                , Html.br [] []
+                , Html.text
+                    ("Expected "
+                        ++ Type.toString t
+                        ++ ", got "
+                        ++ Json.Encode.encode 0 (encodeJson j)
                     )
-
-                TList list ->
-                    ( { default | list = Just list }
-                    , [ Html.map TList (typeEditor list) ]
-                    )
-
-                TString str ->
-                    ( { default | string = Just str }
-                    , Html.input
-                        [ type_ "checkbox"
-                        , checked (str.pattern /= Nothing)
-                        , onCheck
-                            (\newValue ->
-                                TString
-                                    { str
-                                        | pattern =
-                                            if newValue then
-                                                Just ""
-
-                                            else
-                                                Nothing
-                                    }
-                            )
-                        ]
-                        []
-                    , Html.input
-                        [ onInput
-                            (\newPattern ->
-                                TString
-                                    { str
-                                        | pattern = Just newPattern
-                                    }
-                            )
-                        , value (Maybe.withDefault "" str.pattern)
-                        ]
-                        []
-                    )
-
-                TInteger ->
-                    ( default, [] )
-
-                TNumber ->
-                    ( default, [] )
-
-                TBoolean ->
-                    ( default, [] )
-
-                TNull ->
-                    ( default, [] )
+                ]
+                |> Err
     in
-    div
-        [ style "display" "flex"
-        , style "flex-direction" "column"
-        , style "gap" "4px"
-        ]
-        (Theme.select
-            [ ( "object", TObject (Maybe.withDefault emptyObject extracted.obj) ) ]
+    case ( t, j ) of
+        ( TOneOf alternatives, _ ) ->
+            case
+                List.Extra.find
+                    (\alternative ->
+                        matches alternative j
+                            |> Result.Extra.isOk
+                    )
+                    alternatives
+            of
+                Nothing ->
+                    mismatch
+                        (Just
+                            (TOneOf
+                                (alternatives
+                                    ++ [ suggestType j ]
+                                )
+                            )
+                        )
+
+                Just _ ->
+                    Ok ()
+
+        ( TList tchild, List children ) ->
+            children
+                |> Result.Extra.combineMap (\child -> matches tchild child)
+                |> Result.map (\_ -> ())
+
+        ( TString { pattern }, String s ) ->
+            case pattern of
+                Nothing ->
+                    Ok ()
+
+                Just p ->
+                    let
+                        regex : Regex
+                        regex =
+                            Regex.fromString p
+                                |> Maybe.withDefault Regex.never
+                    in
+                    if Regex.contains regex s then
+                        Ok ()
+
+                    else
+                        mismatch Nothing
+
+        ( TInteger, Int _ ) ->
+            Ok ()
+
+        ( TNumber, Float _ ) ->
+            Ok ()
+
+        ( TBoolean, Bool _ ) ->
+            Ok ()
+
+        ( TNull, Null ) ->
+            Ok ()
+
+        ( TObject { fields, additionalProperties }, Object v ) ->
+            let
+                fieldsDict =
+                    Dict.fromList fields
+            in
+            v
+                |> Dict.toList
+                |> Result.Extra.combineMap
+                    (\( fieldName, fieldValue ) ->
+                        case Dict.get fieldName fieldsDict of
+                            Just field ->
+                                matches field.type_ fieldValue
+                                    |> Result.mapError
+                                        (Html.map
+                                            (\suggestedType ->
+                                                TObject
+                                                    { fields =
+                                                        List.Extra.setIf
+                                                            (\( n, _ ) -> n == fieldName)
+                                                            ( fieldName, { field | type_ = suggestedType } )
+                                                            fields
+                                                    , additionalProperties = additionalProperties
+                                                    }
+                                            )
+                                        )
+
+                            Nothing ->
+                                case additionalProperties of
+                                    AdditionalPropertiesNotAllowed ->
+                                        mismatch
+                                            (Just
+                                                (TObject
+                                                    { fields =
+                                                        fields
+                                                            ++ [ ( fieldName
+                                                                 , { type_ = suggestType fieldValue
+                                                                   , required = True
+                                                                   , nullable = False
+                                                                   }
+                                                                 )
+                                                               ]
+                                                    , additionalProperties = additionalProperties
+                                                    }
+                                                )
+                                            )
+
+                                    AdditionalPropertiesAllowed Nothing ->
+                                        Ok ()
+
+                                    AdditionalPropertiesAllowed (Just additionalType) ->
+                                        matches additionalType fieldValue
+                                            |> Result.mapError
+                                                (Html.map
+                                                    (\suggestedType ->
+                                                        TObject
+                                                            { fields =
+                                                                fields
+                                                                    ++ [ ( fieldName
+                                                                         , { type_ = suggestType fieldValue
+                                                                           , required = True
+                                                                           , nullable = False
+                                                                           }
+                                                                         )
+                                                                       ]
+                                                            , additionalProperties = additionalProperties
+                                                            }
+                                                    )
+                                                )
+                    )
+                |> Result.map (\_ -> ())
+
+        _ ->
+            mismatch Nothing
+
+
+suggestType : Json -> Type
+suggestType j =
+    case j of
+        List [] ->
+            TList TNull
+
+        List (h :: t) ->
             t
-            :: additional
-        )
+                |> List.foldl
+                    (\e a -> Type.union (suggestType e) a)
+                    (suggestType h)
+                |> TList
 
+        Int _ ->
+            TInteger
 
-emptyObject :
-    { fields : List ( String, Type )
-    , additionalProperties : AdditionalProperties
-    }
-emptyObject =
-    { fields = []
-    , additionalProperties = AdditionalPropertiesNotAllowed
-    }
+        Float _ ->
+            TNumber
+
+        String _ ->
+            TString { pattern = Nothing }
+
+        Bool _ ->
+            TBoolean
+
+        Null ->
+            TNull
+
+        Object fields ->
+            TObject
+                { fields =
+                    fields
+                        |> Dict.toList
+                        |> List.map
+                            (\( fieldName, fieldValue ) ->
+                                ( fieldName
+                                , { type_ = suggestType fieldValue
+                                  , required = True
+                                  , nullable = False
+                                  }
+                                )
+                            )
+                , additionalProperties = AdditionalPropertiesNotAllowed
+                }
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )

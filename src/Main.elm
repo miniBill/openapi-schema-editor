@@ -102,7 +102,7 @@ view model =
                     Html.text (Debug.toString e)
 
                 Ok json ->
-                    viewMatch (matches model.type_ json)
+                    viewMatch (matches [] model.type_ json)
             ]
         ]
 
@@ -117,11 +117,11 @@ viewMatch match =
             Html.map Type e
 
 
-matches : Type -> Json -> Result (Html Type) ()
-matches t j =
+matches : List String -> Type -> Json -> Result (Html Type) ()
+matches path t j =
     let
-        mismatch : Maybe Type -> Result (Html Type) ()
-        mismatch maybeSuggested =
+        mismatch : List String -> Maybe Type -> Json -> Maybe Type -> Result (Html Type) ()
+        mismatch innerPath expected found maybeSuggested =
             let
                 suggested : Type
                 suggested =
@@ -130,19 +130,26 @@ matches t j =
                             s
 
                         Nothing ->
-                            suggestType j
+                            suggestType found
             in
             Html.div
                 [ style "padding" "2px"
                 , style "border" "1px solid gray"
                 ]
-                [ Html.button [ onClick suggested ] [ Html.text ("Use " ++ Type.toString suggested ++ " instead") ]
+                [ Html.button [ onClick suggested ] [ Html.text "Try inferring type" ]
                 , Html.br [] []
                 , Html.text
-                    ("Expected "
-                        ++ Type.toString t
+                    ("At "
+                        ++ String.join "." (List.reverse innerPath)
+                        ++ (case expected of
+                                Just e ->
+                                    ", expected " ++ Type.toString e
+
+                                Nothing ->
+                                    " was unexpected"
+                           )
                         ++ ", got "
-                        ++ Json.Encode.encode 0 (encodeJson j)
+                        ++ Json.Encode.encode 0 (encodeJson found)
                     )
                 ]
                 |> Err
@@ -152,35 +159,45 @@ matches t j =
             case
                 List.Extra.find
                     (\alternative ->
-                        matches alternative j
+                        matches path alternative j
                             |> Result.Extra.isOk
                     )
                     alternatives
             of
                 Nothing ->
-                    mismatch
-                        (Just
+                    mismatch path (Just t) j <|
+                        Just
                             (TOneOf
                                 (alternatives
                                     ++ [ suggestType j ]
                                 )
                             )
-                        )
 
                 Just _ ->
                     Ok ()
 
         ( TList tchild, List children ) ->
             children
-                |> Result.Extra.combineMap (\child -> matches tchild child)
+                |> List.indexedMap
+                    (\i child ->
+                        matches
+                            (String.fromInt i :: path)
+                            tchild
+                            child
+                    )
+                |> Result.Extra.combine
                 |> Result.map (\_ -> ())
 
-        ( TString { pattern }, String s ) ->
-            case pattern of
-                Nothing ->
-                    Ok ()
+        ( TString ({ pattern, const, format } as str), String s ) ->
+            case ( const, pattern, format ) of
+                ( Just c, _, _ ) ->
+                    if c == s then
+                        Ok ()
 
-                Just p ->
+                    else
+                        mismatch path (Just t) j (Just (TString { str | const = Just s }))
+
+                ( Nothing, Just p, _ ) ->
                     let
                         regex : Regex
                         regex =
@@ -191,7 +208,13 @@ matches t j =
                         Ok ()
 
                     else
-                        mismatch Nothing
+                        mismatch path (Just t) j Nothing
+
+                ( Nothing, Nothing, Just f ) ->
+                    Ok ()
+
+                ( Nothing, Nothing, Nothing ) ->
+                    Ok ()
 
         ( TInteger, Int _ ) ->
             Ok ()
@@ -216,7 +239,7 @@ matches t j =
                     (\( fieldName, fieldValue ) ->
                         case Dict.get fieldName fieldsDict of
                             Just field ->
-                                matches field.type_ fieldValue
+                                matches (fieldName :: path) field.type_ fieldValue
                                     |> Result.mapError
                                         (Html.map
                                             (\suggestedType ->
@@ -234,8 +257,8 @@ matches t j =
                             Nothing ->
                                 case additionalProperties of
                                     AdditionalPropertiesNotAllowed ->
-                                        mismatch
-                                            (Just
+                                        mismatch (fieldName :: path) Nothing fieldValue <|
+                                            Just
                                                 (TObject
                                                     { fields =
                                                         fields
@@ -249,13 +272,12 @@ matches t j =
                                                     , additionalProperties = additionalProperties
                                                     }
                                                 )
-                                            )
 
                                     AdditionalPropertiesAllowed Nothing ->
                                         Ok ()
 
                                     AdditionalPropertiesAllowed (Just additionalType) ->
-                                        matches additionalType fieldValue
+                                        matches (fieldName :: path) additionalType fieldValue
                                             |> Result.mapError
                                                 (Html.map
                                                     (\suggestedType ->
@@ -277,7 +299,7 @@ matches t j =
                 |> Result.map (\_ -> ())
 
         _ ->
-            mismatch Nothing
+            mismatch path (Just t) j Nothing
 
 
 suggestType : Json -> Type
@@ -300,7 +322,7 @@ suggestType j =
             TNumber
 
         String _ ->
-            TString { pattern = Nothing }
+            TString { pattern = Nothing, const = Nothing, format = Nothing }
 
         Bool _ ->
             TBoolean

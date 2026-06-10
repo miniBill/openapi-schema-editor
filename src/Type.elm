@@ -9,7 +9,11 @@ import Theme
 
 type Type
     = TList Type
-    | TString { pattern : Maybe String }
+    | TString
+        { pattern : Maybe String
+        , const : Maybe String
+        , format : Maybe String
+        }
     | TInteger
     | TNumber
     | TBoolean
@@ -113,6 +117,72 @@ editor t =
                                 ]
                                 []
                             ]
+                      , Html.div []
+                            [ Html.label []
+                                [ Html.text "Const "
+                                , Html.input
+                                    [ Html.Attributes.type_ "checkbox"
+                                    , Html.Attributes.checked (str.const /= Nothing)
+                                    , Html.Events.onCheck
+                                        (\newValue ->
+                                            TString
+                                                { str
+                                                    | const =
+                                                        if newValue then
+                                                            Just ""
+
+                                                        else
+                                                            Nothing
+                                                }
+                                        )
+                                    ]
+                                    []
+                                ]
+                            , Html.input
+                                [ Html.Events.onInput
+                                    (\newConst ->
+                                        TString
+                                            { str
+                                                | const = Just newConst
+                                            }
+                                    )
+                                , Html.Attributes.value (Maybe.withDefault "" str.const)
+                                ]
+                                []
+                            ]
+                      , Html.div []
+                            [ Html.label []
+                                [ Html.text "Format "
+                                , Html.input
+                                    [ Html.Attributes.type_ "checkbox"
+                                    , Html.Attributes.checked (str.format /= Nothing)
+                                    , Html.Events.onCheck
+                                        (\newValue ->
+                                            TString
+                                                { str
+                                                    | format =
+                                                        if newValue then
+                                                            Just ""
+
+                                                        else
+                                                            Nothing
+                                                }
+                                        )
+                                    ]
+                                    []
+                                ]
+                            , Html.input
+                                [ Html.Events.onInput
+                                    (\newFormat ->
+                                        TString
+                                            { str
+                                                | format = Just newFormat
+                                            }
+                                    )
+                                , Html.Attributes.value (Maybe.withDefault "" str.format)
+                                ]
+                                []
+                            ]
                       ]
                     )
 
@@ -150,7 +220,14 @@ editor t =
             ([ TObject (Maybe.withDefault emptyObject extracted.obj)
              , TList (Maybe.withDefault TInteger extracted.list)
              , TOneOf extracted.oneOf
-             , TString (Maybe.withDefault { pattern = Nothing } extracted.string)
+             , TString
+                (Maybe.withDefault
+                    { pattern = Nothing
+                    , const = Nothing
+                    , format = Nothing
+                    }
+                    extracted.string
+                )
              , TInteger
              , TNumber
              , TBoolean
@@ -170,7 +247,12 @@ type alias Extracted =
             , additionalProperties : AdditionalProperties
             }
     , list : Maybe Type
-    , string : Maybe { pattern : Maybe String }
+    , string :
+        Maybe
+            { pattern : Maybe String
+            , const : Maybe String
+            , format : Maybe String
+            }
     , oneOf : List Type
     }
 
@@ -224,7 +306,32 @@ objectEditor obj default =
                                         obj.fields
                             }
                     )
+            , Html.button
+                [ Html.Events.onClick
+                    (TObject
+                        { obj
+                            | fields =
+                                List.Extra.removeAt i obj.fields
+                        }
+                    )
+                ]
+                [ Html.text "🗑️" ]
             ]
+
+        newFieldView : Html Type
+        newFieldView =
+            Html.input
+                [ Html.Attributes.style "grid-column" "1 / span 3"
+                , Html.Attributes.value ""
+                , Html.Events.onInput
+                    (\newFieldName ->
+                        TObject
+                            { obj
+                                | fields = obj.fields ++ [ ( newFieldName, { type_ = TNull, required = True, nullable = False } ) ]
+                            }
+                    )
+                ]
+                []
 
         additionalPropertiesViews : List (Html Type)
         additionalPropertiesViews =
@@ -265,9 +372,10 @@ objectEditor obj default =
     ( { default | obj = Just obj }
     , Html.div
         [ Html.Attributes.style "display" "grid"
-        , Html.Attributes.style "grid-template-columns" "auto auto"
+        , Html.Attributes.style "grid-template-columns" "auto auto auto"
         ]
         fieldsViews
+        :: newFieldView
         :: additionalPropertiesViews
     )
 

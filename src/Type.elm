@@ -102,12 +102,24 @@ editor t =
                     , children
                         |> List.indexedMap
                             (\i child ->
-                                editor child
+                                [ Html.div [] []
+                                , editor child
                                     |> Html.map
                                         (\newChild ->
                                             TOneOf (List.Extra.setAt i newChild children)
                                         )
+                                , Html.button
+                                    [ Html.Events.onClick (TOneOf (List.Extra.removeAt i children)) ]
+                                    [ Html.text "🗑️" ]
+                                ]
                             )
+                        |> List.concat
+                        |> Html.div
+                            [ Html.Attributes.style "display" "grid"
+                            , Html.Attributes.style "gap" "4px"
+                            , Html.Attributes.style "grid-template-columns" "4px auto auto"
+                            ]
+                        |> List.singleton
                     )
     in
     Html.div

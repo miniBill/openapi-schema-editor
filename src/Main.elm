@@ -3,7 +3,7 @@ module Main exposing (main)
 import Browser
 import Cmd.Extra exposing (add)
 import Dict exposing (Dict)
-import Html exposing (Html, div, i, main_, select, textarea)
+import Html exposing (Html, br, button, div, i, main_, p, select, text, textarea)
 import Html.Attributes exposing (checked, rows, style, type_, value)
 import Html.Events exposing (onCheck, onClick, onInput)
 import Http
@@ -15,6 +15,7 @@ import Parser.Advanced
 import Regex exposing (Regex)
 import Result.Extra
 import Rfc3339
+import String.Extra
 import Theme
 import Type exposing (AdditionalProperties(..), Type(..))
 import Url
@@ -93,6 +94,7 @@ view model =
             , onInput Input
             , style "flex" "1"
             , style "height" "calc(100dvh - 16px)"
+            , style "font-family" "monospace"
             ]
             []
         , div
@@ -102,10 +104,10 @@ view model =
             [ style "flex" "1" ]
             [ case model.json of
                 Err e ->
-                    Html.text (Debug.toString e)
+                    text (Debug.toString e)
 
                 Ok json ->
-                    viewMatch (matches [] model.type_ json)
+                    viewMatch (matchesHelp [] model.type_ json)
             ]
         ]
 
@@ -114,14 +116,14 @@ viewMatch : Result (Html Type) () -> Html Msg
 viewMatch match =
     case match of
         Ok () ->
-            Html.text "All matches"
+            text "All matches"
 
         Err e ->
             Html.map Type e
 
 
-matches : List String -> Type -> Json -> Result (Html Type) ()
-matches path t j =
+matchesHelp : List String -> Type -> Json -> Result (Html Type) ()
+matchesHelp path t j =
     let
         mismatch : List String -> Maybe Type -> Json -> Maybe Type -> Result (Html Type) ()
         mismatch innerPath expected found maybeSuggested =
@@ -135,25 +137,34 @@ matches path t j =
                         Nothing ->
                             suggestType found
             in
-            Html.div
+            div
                 [ style "padding" "2px"
                 , style "border" "1px solid gray"
                 ]
-                [ Html.button [ onClick suggested ] [ Html.text "Try inferring type" ]
-                , Html.br [] []
-                , Html.text
-                    ("At "
-                        ++ String.join "." (List.reverse innerPath)
-                        ++ (case expected of
-                                Just e ->
-                                    ", expected " ++ Type.toString e
+                [ button [ onClick suggested ] [ text "Try inferring type" ]
+                , br [] []
+                , p [ style "font-family" "monospace" ]
+                    [ text "At "
+                    , if List.isEmpty innerPath then
+                        text "root"
 
-                                Nothing ->
-                                    " was unexpected"
-                           )
-                        ++ ", got "
-                        ++ Json.Encode.encode 0 (encodeJson found)
-                    )
+                      else
+                        text (String.join "." (List.reverse innerPath))
+                    , case expected of
+                        Just e ->
+                            text (", expected " ++ Type.toString e)
+
+                        Nothing ->
+                            text " was unexpected"
+                    , text
+                        ", got "
+                    , found
+                        |> cut
+                        |> encodeJson
+                        |> Json.Encode.encode 0
+                        |> String.Extra.ellipsis 1000
+                        |> text
+                    ]
                 ]
                 |> Err
     in
@@ -162,7 +173,7 @@ matches path t j =
             case
                 List.Extra.find
                     (\alternative ->
-                        matches path alternative j
+                        matchesHelp path alternative j
                             |> Result.Extra.isOk
                     )
                     alternatives
@@ -183,7 +194,7 @@ matches path t j =
             children
                 |> List.indexedMap
                     (\i child ->
-                        matches
+                        matchesHelp
                             (String.fromInt i :: path)
                             tchild
                             child
@@ -221,11 +232,11 @@ matches path t j =
                                     Ok ()
 
                                 Err _ ->
-                                    Html.div
+                                    div
                                         [ style "padding" "2px"
                                         , style "border" "1px solid gray"
                                         ]
-                                        [ Html.text
+                                        [ text
                                             ("At "
                                                 ++ String.join "." (List.reverse path)
                                                 ++ ", expected "
@@ -237,11 +248,11 @@ matches path t j =
                                         |> Err
 
                         _ ->
-                            Html.div
+                            div
                                 [ style "padding" "2px"
                                 , style "border" "1px solid gray"
                                 ]
-                                [ Html.text ("Unknown format: " ++ f) ]
+                                [ text ("Unknown format: " ++ f) ]
                                 |> Err
 
                 ( Nothing, Nothing, Nothing ) ->
@@ -270,7 +281,7 @@ matches path t j =
                     (\( fieldName, fieldValue ) ->
                         case Dict.get fieldName fieldsDict of
                             Just field ->
-                                matches (fieldName :: path) field.type_ fieldValue
+                                matchesHelp (fieldName :: path) field.type_ fieldValue
                                     |> Result.mapError
                                         (Html.map
                                             (\suggestedType ->
@@ -308,7 +319,7 @@ matches path t j =
                                         Ok ()
 
                                     AdditionalPropertiesAllowed (Just additionalType) ->
-                                        matches (fieldName :: path) additionalType fieldValue
+                                        matchesHelp (fieldName :: path) additionalType fieldValue
                                             |> Result.mapError
                                                 (Html.map
                                                     (\suggestedType ->
@@ -331,6 +342,22 @@ matches path t j =
 
         _ ->
             mismatch path (Just t) j Nothing
+
+
+cut : Json -> Json
+cut j =
+    case j of
+        List l ->
+            List (List.map cut l)
+
+        String s ->
+            String (String.Extra.ellipsis 30 s)
+
+        Object fields ->
+            Object (Dict.map (always cut) fields)
+
+        _ ->
+            j
 
 
 suggestType : Json -> Type

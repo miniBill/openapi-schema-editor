@@ -11,10 +11,13 @@ import Json.Decode exposing (Decoder)
 import Json.Encode
 import List.Extra
 import Maybe.Extra
+import Parser.Advanced
 import Regex exposing (Regex)
 import Result.Extra
+import Rfc3339
 import Theme
 import Type exposing (AdditionalProperties(..), Type(..))
+import Url
 
 
 type alias Model =
@@ -211,7 +214,35 @@ matches path t j =
                         mismatch path (Just t) j Nothing
 
                 ( Nothing, Nothing, Just f ) ->
-                    Ok ()
+                    case f of
+                        "date-time" ->
+                            case Parser.Advanced.run Rfc3339.dateTimeOffsetParser s of
+                                Ok _ ->
+                                    Ok ()
+
+                                Err _ ->
+                                    Html.div
+                                        [ style "padding" "2px"
+                                        , style "border" "1px solid gray"
+                                        ]
+                                        [ Html.text
+                                            ("At "
+                                                ++ String.join "." (List.reverse path)
+                                                ++ ", expected "
+                                                ++ Type.toString t
+                                                ++ ", got "
+                                                ++ Json.Encode.encode 0 (encodeJson j)
+                                            )
+                                        ]
+                                        |> Err
+
+                        _ ->
+                            Html.div
+                                [ style "padding" "2px"
+                                , style "border" "1px solid gray"
+                                ]
+                                [ Html.text ("Unknown format: " ++ f) ]
+                                |> Err
 
                 ( Nothing, Nothing, Nothing ) ->
                     Ok ()
@@ -321,8 +352,18 @@ suggestType j =
         Float _ ->
             TNumber
 
-        String _ ->
-            TString { pattern = Nothing, const = Nothing, format = Nothing }
+        String s ->
+            case Parser.Advanced.run Rfc3339.dateTimeOffsetParser s of
+                Ok _ ->
+                    TString { pattern = Nothing, const = Nothing, format = Just "date-time" }
+
+                Err _ ->
+                    case Url.fromString s of
+                        Just _ ->
+                            TString { pattern = Nothing, const = Nothing, format = Just "uri" }
+
+                        Nothing ->
+                            TString { pattern = Nothing, const = Nothing, format = Just "uri" }
 
         Bool _ ->
             TBoolean

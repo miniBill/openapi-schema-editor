@@ -1,6 +1,8 @@
 {
     "type": "application",
-    "source-directories": ["src"],
+    "source-directories": [
+        "src"
+    ],
     "elm-version": "0.19.1",
     "dependencies": {
         "direct": {
@@ -9,15 +11,19 @@
             "elm/html": "1.0.1",
             "elm/http": "2.0.0",
             "elm/json": "1.1.4",
+            "elm/parser": "1.1.0",
             "elm/regex": "1.0.0",
-            "elmcraft/core-extra": "2.3.0"
+            "elm/url": "1.0.0",
+            "elmcraft/core-extra": "2.3.0",
+            "wolfadex/elm-rfc3339": "2.0.0"
         },
         "indirect": {
             "elm/bytes": "1.0.8",
             "elm/file": "1.0.5",
             "elm/time": "1.0.0",
-            "elm/url": "1.0.0",
-            "elm/virtual-dom": "1.0.5"
+            "elm/virtual-dom": "1.0.5",
+            "justinmimbs/date": "4.1.0",
+            "justinmimbs/time-extra": "1.2.0"
         }
     },
     "test-dependencies": {

@@ -253,106 +253,51 @@ editor t =
 
 stringEditor : StringData -> Extracted -> ( Extracted, List (Html Type) )
 stringEditor str default =
+    let
+        checkboxedInput : String -> Maybe String -> (Maybe String -> StringData) -> List (Html Type)
+        checkboxedInput label value toMsg =
+            [ Html.label
+                [ Html.Attributes.style "display" "flex"
+                ]
+                [ Html.span
+                    [ Html.Attributes.style "display" "block"
+                    , Html.Attributes.style "flex" "1"
+                    ]
+                    [ Html.text (label ++ " ") ]
+                , Html.input
+                    [ Html.Attributes.type_ "checkbox"
+                    , Html.Attributes.checked (value /= Nothing)
+                    , Html.Events.onCheck
+                        (\newValue ->
+                            TString
+                                (toMsg
+                                    (if newValue then
+                                        Just ""
+
+                                     else
+                                        Nothing
+                                    )
+                                )
+                        )
+                    ]
+                    []
+                ]
+            , Html.input
+                [ Html.Events.onInput (\newValue -> TString (toMsg (Just newValue)))
+                , Html.Attributes.value (Maybe.withDefault "" value)
+                ]
+                []
+            ]
+    in
     ( { default | string = Just str }
-    , [ Html.div []
-            [ Html.label []
-                [ Html.text "Pattern "
-                , Html.input
-                    [ Html.Attributes.type_ "checkbox"
-                    , Html.Attributes.checked (str.pattern /= Nothing)
-                    , Html.Events.onCheck
-                        (\newValue ->
-                            TString
-                                { str
-                                    | pattern =
-                                        if newValue then
-                                            Just ""
-
-                                        else
-                                            Nothing
-                                }
-                        )
-                    ]
-                    []
-                ]
-            , Html.input
-                [ Html.Events.onInput
-                    (\newPattern ->
-                        TString
-                            { str
-                                | pattern = Just newPattern
-                            }
-                    )
-                , Html.Attributes.value (Maybe.withDefault "" str.pattern)
-                ]
-                []
+    , [ Html.div
+            [ Html.Attributes.style "display" "grid"
+            , Html.Attributes.style "grid-template-columns" "auto 1fr"
             ]
-      , Html.div []
-            [ Html.label []
-                [ Html.text "Const "
-                , Html.input
-                    [ Html.Attributes.type_ "checkbox"
-                    , Html.Attributes.checked (str.const /= Nothing)
-                    , Html.Events.onCheck
-                        (\newValue ->
-                            TString
-                                { str
-                                    | const =
-                                        if newValue then
-                                            Just ""
-
-                                        else
-                                            Nothing
-                                }
-                        )
-                    ]
-                    []
-                ]
-            , Html.input
-                [ Html.Events.onInput
-                    (\newConst ->
-                        TString
-                            { str
-                                | const = Just newConst
-                            }
-                    )
-                , Html.Attributes.value (Maybe.withDefault "" str.const)
-                ]
-                []
-            ]
-      , Html.div []
-            [ Html.label []
-                [ Html.text "Format "
-                , Html.input
-                    [ Html.Attributes.type_ "checkbox"
-                    , Html.Attributes.checked (str.format /= Nothing)
-                    , Html.Events.onCheck
-                        (\newValue ->
-                            TString
-                                { str
-                                    | format =
-                                        if newValue then
-                                            Just ""
-
-                                        else
-                                            Nothing
-                                }
-                        )
-                    ]
-                    []
-                ]
-            , Html.input
-                [ Html.Events.onInput
-                    (\newFormat ->
-                        TString
-                            { str
-                                | format = Just newFormat
-                            }
-                    )
-                , Html.Attributes.value (Maybe.withDefault "" str.format)
-                ]
-                []
-            ]
+            (checkboxedInput "Pattern" str.pattern (\newValue -> { str | pattern = newValue })
+                ++ checkboxedInput "Const" str.const (\newValue -> { str | const = newValue })
+                ++ checkboxedInput "Format" str.format (\newValue -> { str | format = newValue })
+            )
       ]
     )
 

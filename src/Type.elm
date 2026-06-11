@@ -96,7 +96,7 @@ toShortString t =
             "oneOf"
 
         TRef name ->
-            "$ref: " ++ name
+            "$ref"
 
 
 toString : Type -> String
@@ -184,7 +184,8 @@ editor t =
 
                 TRef name ->
                     ( { default | ref = Just name }
-                    , [ Html.label []
+                    , [ Html.label
+                            [ Html.Attributes.style "white-space" "no-wrap" ]
                             [ Html.text "$ref: "
                             , Html.input
                                 [ Html.Attributes.value name
@@ -472,13 +473,13 @@ objectEditor obj default =
             ]
     in
     ( { default | obj = Just obj }
-    , Html.div
-        [ Html.Attributes.style "display" "grid"
-        , Html.Attributes.style "gap" "4px"
-        , Html.Attributes.style "grid-template-columns" "auto auto auto"
-        ]
-        fieldsViews
-        :: newFieldView
+    , newFieldView
+        :: Html.div
+            [ Html.Attributes.style "display" "grid"
+            , Html.Attributes.style "gap" "4px"
+            , Html.Attributes.style "grid-template-columns" "auto auto auto"
+            ]
+            fieldsViews
         :: additionalPropertiesViews
     )
 

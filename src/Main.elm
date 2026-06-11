@@ -218,7 +218,7 @@ findProblems types j =
                 let
                     problems : List (Html Type)
                     problems =
-                        findProblemsForType type_ values
+                        findProblemsForType types type_ values
                 in
                 if List.isEmpty problems then
                     Nothing
@@ -235,16 +235,33 @@ buildDict seen types typeName value acc =
 
     else
         let
-            ( maybeType, updated ) =
-                case Dict.get typeName acc of
-                    Nothing ->
-                        let
-                            t =
-                                Dict.get typeName types
-                        in
-                        ( t, Dict.insert typeName ( t, [ value ] ) acc )
+            {- Insert if it's not already there and if it's not matching a branch of a OneOf. -}
+            insertMaybe : Maybe Type -> List Json -> ( Maybe Type, Dict String ( Maybe Type, List Json ) )
+            insertMaybe t list =
+                case t of
+                    Just (TOneOf opts) ->
+                        case tryMatchOneOf types opts value of
+                            Just _ ->
+                                ( t, acc )
 
-                    Just ( t, list ) ->
+                            Nothing ->
+                                let
+                                    _ =
+                                        Debug.log "Failed to match in oneof" value
+                                in
+                                ( t
+                                , Dict.insert typeName
+                                    ( t
+                                    , if List.member value list then
+                                        list
+
+                                      else
+                                        value :: list
+                                    )
+                                    acc
+                                )
+
+                    _ ->
                         ( t
                         , Dict.insert typeName
                             ( t
@@ -257,6 +274,15 @@ buildDict seen types typeName value acc =
                             acc
                         )
 
+            ( maybeType, updated ) =
+                case Dict.get typeName acc of
+                    Nothing ->
+                        insertMaybe (Dict.get typeName types) []
+
+                    Just ( t, list ) ->
+                        insertMaybe t list
+
+            go : Type -> Json -> Dict String ( Maybe Type, List Json ) -> Dict String ( Maybe Type, List Json )
             go t child innerAcc =
                 case ( t, child ) of
                     ( TList c, List children ) ->
@@ -272,86 +298,29 @@ buildDict seen types typeName value acc =
                             innerAcc
 
                     ( TOneOf opts, _ ) ->
-                        case List.Extra.find (\opt -> Type.isValidFor opt child) opts of
-                            Just c ->
-                                go c child innerAcc
+                        case tryMatchOneOf types opts child of
+                            Just s ->
+                                let
+                                    _ =
+                                        Debug.log "Matched oneOf" value
+
+                                    _ =
+                                        Debug.log "Matched to" s
+                                in
+                                go s child innerAcc
 
                             Nothing ->
                                 let
-                                    specific : Maybe Type
-                                    specific =
-                                        case child of
-                                            Object fs ->
-                                                case Dict.get "type" fs of
-                                                    Just (String type_) ->
-                                                        List.Extra.find
-                                                            (\opt ->
-                                                                case opt of
-                                                                    TObject { fields } ->
-                                                                        List.member
-                                                                            ( "type"
-                                                                            , { nullable = False
-                                                                              , required = True
-                                                                              , type_ = TString { const = Just type_, pattern = Nothing, format = Nothing }
-                                                                              }
-                                                                            )
-                                                                            fields
-
-                                                                    TList _ ->
-                                                                        False
-
-                                                                    TString _ ->
-                                                                        False
-
-                                                                    TInteger ->
-                                                                        False
-
-                                                                    TNumber ->
-                                                                        False
-
-                                                                    TBoolean ->
-                                                                        False
-
-                                                                    TNull ->
-                                                                        False
-
-                                                                    TOneOf _ ->
-                                                                        False
-
-                                                                    TRef _ ->
-                                                                        False
-                                                            )
-                                                            opts
-
-                                                    _ ->
-                                                        Nothing
-
-                                            List _ ->
-                                                Nothing
-
-                                            Int _ ->
-                                                Nothing
-
-                                            Float _ ->
-                                                Nothing
-
-                                            String _ ->
-                                                Nothing
-
-                                            Bool _ ->
-                                                Nothing
-
-                                            Null ->
-                                                Nothing
+                                    _ =
+                                        Debug.log "Failed to match in oneof" value
                                 in
-                                case specific of
-                                    Just s ->
-                                        go s child innerAcc
-
-                                    Nothing ->
-                                        List.foldl (\opt a -> go opt child a) innerAcc opts
+                                List.foldl (\opt a -> go opt child a) innerAcc opts
 
                     ( TRef ref, _ ) ->
+                        let
+                            _ =
+                                Debug.log "ref" ref
+                        in
                         buildDict (Set.insert typeName seen) types ref child innerAcc
 
                     _ ->
@@ -365,8 +334,60 @@ buildDict seen types typeName value acc =
                 go t value updated
 
 
-findProblemsForType : Maybe Type -> List Json -> List (Html Type)
-findProblemsForType maybeType js =
+tryMatchOneOf : Dict String Type -> List Type -> Json -> Maybe Type
+tryMatchOneOf types opts child =
+    let
+        childType : Maybe String
+        childType =
+            case child of
+                Object fs ->
+                    case Dict.get "type" fs of
+                        Just (String type_) ->
+                            Just type_
+
+                        _ ->
+                            Nothing
+
+                _ ->
+                    Nothing
+    in
+    let
+        isGood : Type -> Bool
+        isGood opt =
+            case opt of
+                TRef ref ->
+                    case Dict.get ref types of
+                        Nothing ->
+                            False
+
+                        Just t ->
+                            isGood t
+
+                TObject { fields } ->
+                    Type.isValidFor opt child
+                        || (case childType of
+                                Just t ->
+                                    List.member
+                                        ( "type"
+                                        , { nullable = False
+                                          , required = True
+                                          , type_ = TString { const = Just t, pattern = Nothing, format = Nothing }
+                                          }
+                                        )
+                                        fields
+
+                                Nothing ->
+                                    False
+                           )
+
+                _ ->
+                    Type.isValidFor opt child
+    in
+    List.Extra.find isGood opts
+
+
+findProblemsForType : Dict String Type -> Maybe Type -> List Json -> List (Html Type)
+findProblemsForType types maybeType js =
     let
         nonMatching : List Json
         nonMatching =
@@ -431,18 +452,18 @@ findProblemsForType maybeType js =
                     ]
             in
             case ( maybeType, jsHead ) of
-                -- ( TOneOf alternatives, _ ) ->
-                --     case List.Extra.find (\alternative -> Type.isValidFor alternative j) alternatives of
-                --         Nothing ->
-                --             mismatch path (Just t) j <|
-                --                 Just
-                --                     (TOneOf
-                --                         (alternatives
-                --                             ++ [ Type.suggest j ]
-                --                         )
-                --                     )
-                --         Just _ ->
-                --             []
+                ( Just (TOneOf alternatives), _ ) ->
+                    case tryMatchOneOf types alternatives jsHead of
+                        Just s ->
+                            findProblemsForType types (Just s) [ jsHead ]
+
+                        Nothing ->
+                            mismatch Nothing <|
+                                TOneOf
+                                    (alternatives
+                                        ++ [ Type.suggest jsHead ]
+                                    )
+
                 -- ( TList tchild, List children ) ->
                 --     children
                 --         |> List.indexedMap

@@ -1,28 +1,40 @@
 module Type exposing (..)
 
+import Dict exposing (Dict)
 import Html exposing (Html)
 import Html.Attributes
 import Html.Events
+import Json exposing (Json(..))
 import List.Extra
+import Parser.Advanced
+import Regex exposing (Regex)
+import Rfc3339
 import Theme
 
 
 type Type
     = TList Type
-    | TString
-        { pattern : Maybe String
-        , const : Maybe String
-        , format : Maybe String
-        }
+    | TString StringData
     | TInteger
     | TNumber
     | TBoolean
     | TNull
-    | TObject
-        { fields : List ( String, Field )
-        , additionalProperties : AdditionalProperties
-        }
+    | TObject ObjectData
     | TOneOf (List Type)
+    | TRef String
+
+
+type alias StringData =
+    { pattern : Maybe String
+    , const : Maybe String
+    , format : Maybe String
+    }
+
+
+type alias ObjectData =
+    { fields : List ( String, Field )
+    , additionalProperties : AdditionalProperties
+    }
 
 
 type alias Field =
@@ -64,6 +76,9 @@ toString t =
         TOneOf _ ->
             "oneOf"
 
+        TRef name ->
+            "$ref: " ++ name
+
 
 editor : Type -> Html Type
 editor t =
@@ -96,6 +111,19 @@ editor t =
 
                 TNull ->
                     ( default, [] )
+
+                TRef name ->
+                    ( { default | ref = Just name }
+                    , [ Html.label []
+                            [ Html.text "$ref: "
+                            , Html.input
+                                [ Html.Attributes.value name
+                                , Html.Events.onInput TRef
+                                ]
+                                []
+                            ]
+                      ]
+                    )
 
                 TOneOf children ->
                     ( { default | oneOf = children }
@@ -143,6 +171,7 @@ editor t =
              , TNumber
              , TBoolean
              , TNull
+             , TRef (Maybe.withDefault "" extracted.ref)
              ]
                 |> List.map (\k -> ( toString k, k ))
             )
@@ -151,13 +180,7 @@ editor t =
         )
 
 
-stringEditor :
-    { pattern : Maybe String
-    , const : Maybe String
-    , format : Maybe String
-    }
-    -> Extracted
-    -> ( Extracted, List (Html Type) )
+stringEditor : StringData -> Extracted -> ( Extracted, List (Html Type) )
 stringEditor str default =
     ( { default | string = Just str }
     , [ Html.div []
@@ -264,19 +287,11 @@ stringEditor str default =
 
 
 type alias Extracted =
-    { obj :
-        Maybe
-            { fields : List ( String, Field )
-            , additionalProperties : AdditionalProperties
-            }
+    { obj : Maybe ObjectData
     , list : Maybe Type
-    , string :
-        Maybe
-            { pattern : Maybe String
-            , const : Maybe String
-            , format : Maybe String
-            }
+    , string : Maybe StringData
     , oneOf : List Type
+    , ref : Maybe String
     }
 
 
@@ -286,15 +301,11 @@ defaultExtracted t =
     , list = Nothing
     , string = Nothing
     , oneOf = [ t ]
+    , ref = Nothing
     }
 
 
-objectEditor :
-    { fields : List ( String, Field )
-    , additionalProperties : AdditionalProperties
-    }
-    -> Extracted
-    -> ( Extracted, List (Html Type) )
+objectEditor : ObjectData -> Extracted -> ( Extracted, List (Html Type) )
 objectEditor obj default =
     let
         fieldsViews : List (Html Type)
@@ -404,10 +415,7 @@ objectEditor obj default =
     )
 
 
-emptyObject :
-    { fields : List ( String, Field )
-    , additionalProperties : AdditionalProperties
-    }
+emptyObject : ObjectData
 emptyObject =
     { fields = []
     , additionalProperties = AdditionalPropertiesNotAllowed
@@ -432,3 +440,136 @@ union l r =
 
             else
                 TOneOf [ l, r ]
+
+
+isValidFor : Type -> Json -> Bool
+isValidFor t j =
+    case ( j, t ) of
+        ( Int _, TInteger ) ->
+            True
+
+        ( List children, TList c ) ->
+            List.all (\child -> isValidFor c child) children
+
+        ( Float _, TNumber ) ->
+            True
+
+        ( String s, TString str ) ->
+            case matchesString str s of
+                Ok () ->
+                    True
+
+                Err _ ->
+                    False
+
+        ( Bool _, TBoolean ) ->
+            True
+
+        ( Null, TNull ) ->
+            True
+
+        ( Object o, TObject obj ) ->
+            List.isEmpty (matchesObject obj o)
+
+        ( _, TRef _ ) ->
+            True
+
+        _ ->
+            False
+
+
+type StringMatchProblem
+    = IsNotConst String
+    | DoesNotMatchPattern
+    | DoesNotMatchFormat String
+    | UnknownFormat String
+
+
+matchesString : StringData -> String -> Result StringMatchProblem ()
+matchesString { pattern, const, format } s =
+    case ( const, pattern, format ) of
+        ( Just c, _, _ ) ->
+            if c == s then
+                Ok ()
+
+            else
+                Err (IsNotConst c)
+
+        ( Nothing, Just p, _ ) ->
+            let
+                regex : Regex
+                regex =
+                    Regex.fromString p
+                        |> Maybe.withDefault Regex.never
+            in
+            if Regex.contains regex s then
+                Ok ()
+
+            else
+                Err DoesNotMatchPattern
+
+        ( Nothing, Nothing, Just f ) ->
+            case f of
+                "date-time" ->
+                    case Parser.Advanced.run Rfc3339.dateTimeOffsetParser s of
+                        Ok _ ->
+                            Ok ()
+
+                        Err _ ->
+                            Err (DoesNotMatchFormat f)
+
+                _ ->
+                    Err (UnknownFormat f)
+
+        ( Nothing, Nothing, Nothing ) ->
+            Ok ()
+
+
+type alias ObjectMatchProblem =
+    { fieldName : String
+    , problem : FieldMatchProblem
+    }
+
+
+type FieldMatchProblem
+    = UnexpectedField
+    | WrongFieldType
+
+
+matchesObject : ObjectData -> Dict String Json -> List ObjectMatchProblem
+matchesObject { fields, additionalProperties } v =
+    let
+        fieldsDict : Dict String Field
+        fieldsDict =
+            Dict.fromList fields
+    in
+    v
+        |> Dict.toList
+        |> List.concatMap
+            (\( fieldName, fieldValue ) ->
+                case Dict.get fieldName fieldsDict of
+                    Just field ->
+                        if isValidFor field.type_ fieldValue then
+                            []
+
+                        else if fieldValue == Null && field.nullable then
+                            []
+
+                        else
+                            [ { fieldName = fieldName, problem = WrongFieldType } ]
+
+                    Nothing ->
+                        case additionalProperties of
+                            AdditionalPropertiesNotAllowed ->
+                                [ { fieldName = fieldName, problem = UnexpectedField } ]
+
+                            AdditionalPropertiesAllowed Nothing ->
+                                []
+
+                            AdditionalPropertiesAllowed (Just additionalType) ->
+                                if isValidFor additionalType fieldValue then
+                                    []
+
+                                else
+                                    [ { fieldName = fieldName, problem = WrongFieldType } ]
+            )

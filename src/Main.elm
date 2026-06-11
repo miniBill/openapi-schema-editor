@@ -7,6 +7,7 @@ import Html exposing (Html, br, button, div, i, main_, p, pre, select, text, tex
 import Html.Attributes exposing (checked, rows, style, type_, value)
 import Html.Events exposing (onCheck, onClick, onInput)
 import Http
+import Json exposing (Json(..))
 import Json.Decode exposing (Decoder)
 import Json.Encode
 import List.Extra
@@ -15,6 +16,7 @@ import Parser.Advanced
 import Regex exposing (Regex)
 import Result.Extra
 import Rfc3339
+import Set exposing (Set)
 import String.Extra
 import Theme
 import Type exposing (AdditionalProperties(..), Type(..))
@@ -24,14 +26,17 @@ import Url
 type alias Model =
     { input : String
     , json : Result Json.Decode.Error Json
-    , type_ : Type
+    , types : Dict String Type
     }
 
 
 type Msg
     = Input String
-    | Type Type
+    | Type String Type
+    | RenameType String String
     | DownloadedJson (Result Http.Error Json)
+    | AddType
+    | RemoveType String
 
 
 main : Program () Model Msg
@@ -47,39 +52,14 @@ main =
 init : () -> ( Model, Cmd Msg )
 init _ =
     ( { input = ""
-      , json = Json.Decode.decodeString jsonDecoder ""
-      , type_ = TInteger
+      , json = Json.Decode.decodeString Json.decoder ""
+      , types = Dict.empty
       }
     , Http.get
         { url = "big.json"
-        , expect = Http.expectJson DownloadedJson jsonDecoder
+        , expect = Http.expectJson DownloadedJson Json.decoder
         }
     )
-
-
-type Json
-    = List (List Json)
-    | Int Int
-    | Float Float
-    | String String
-    | Bool Bool
-    | Null
-    | Object (Dict String Json)
-
-
-jsonDecoder : Decoder Json
-jsonDecoder =
-    Json.Decode.oneOf
-        [ Json.Decode.map Object
-            (Json.Decode.dict (Json.Decode.lazy (\_ -> jsonDecoder)))
-        , Json.Decode.map List
-            (Json.Decode.list (Json.Decode.lazy (\_ -> jsonDecoder)))
-        , Json.Decode.map Int Json.Decode.int
-        , Json.Decode.map String Json.Decode.string
-        , Json.Decode.map Float Json.Decode.float
-        , Json.Decode.map Bool Json.Decode.bool
-        , Json.Decode.null Null
-        ]
 
 
 view : Model -> Html Msg
@@ -98,8 +78,13 @@ view model =
             ]
             []
         , div
-            [ style "flex" "1" ]
-            [ Html.map Type (Type.editor model.type_) ]
+            [ style "flex" "1"
+            , style "display" "grid"
+            , style "grid-template-columns" "auto 1fr auto"
+            , style "align-self" "start"
+            , style "gap" "4px"
+            ]
+            (viewTypes model.types)
         , div
             [ style "flex" "1" ]
             [ case model.json of
@@ -116,49 +101,163 @@ view model =
                         |> Html.div []
 
                 Ok json ->
-                    viewMatch (matchesHelp [] model.type_ json)
+                    viewMatches model.types json
             ]
         ]
 
 
-viewMatch : Result (Html Type) () -> Html Msg
-viewMatch match =
-    case match of
-        Ok () ->
-            text "All matches"
+viewTypes : Dict String Type -> List (Html Msg)
+viewTypes types =
+    button
+        [ onClick AddType
+        , style "grid-column" "1 / span 3"
+        ]
+        [ text "➕ New type" ]
+        :: (types
+                |> Dict.update "" (Maybe.withDefault TNull >> Just)
+                |> Dict.toList
+                |> List.concatMap viewType
+           )
 
-        Err e ->
-            Html.map Type e
+
+viewType : ( String, Type ) -> List (Html Msg)
+viewType ( name, type_ ) =
+    [ if String.isEmpty name then
+        Html.p [] [ Html.text "<root>" ]
+
+      else
+        Html.input [ onInput (RenameType name), value name ] []
+    , Html.map (Type name) (Type.editor type_)
+    , if String.isEmpty name then
+        Html.div [] []
+
+      else
+        button [ onClick (RemoveType name) ] [ text "🗑️" ]
+    ]
 
 
-matchesHelp : List String -> Type -> Json -> Result (Html Type) ()
-matchesHelp path t j =
+viewMatches : Dict String Type -> Json -> Html Msg
+viewMatches t j =
     let
-        mismatch : List String -> Maybe Type -> Json -> Maybe Type -> Result (Html Type) ()
-        mismatch innerPath expected found maybeSuggested =
+        dict : Dict String ( Type, List Json )
+        dict =
+            buildDict t "" j Dict.empty
+    in
+    dict
+        |> Dict.toList
+        |> List.concatMap
+            (\( typeName, ( type_, values ) ) ->
+                [ Html.div []
+                    [ if String.isEmpty typeName then
+                        Html.text "<root>"
+
+                      else
+                        Html.text typeName
+                    ]
+                , Html.div [] (matchesHelp [] type_ values)
+                    |> Html.map (Type typeName)
+                ]
+            )
+        |> div
+            [ style "display" "grid"
+            , style "gap" "4px"
+            , style "grid-template-columns" "auto 1fr"
+            ]
+
+
+buildDict : Dict String Type -> String -> Json -> Dict String ( Type, List Json ) -> Dict String ( Type, List Json )
+buildDict types name value acc =
+    let
+        ( type_, updated ) =
+            case Dict.get name acc of
+                Nothing ->
+                    ( TNull, Dict.insert name ( TNull, [ value ] ) acc )
+
+                Just ( t, list ) ->
+                    ( t
+                    , Dict.insert name
+                        ( t
+                        , if List.member value list then
+                            list
+
+                          else
+                            value :: list
+                        )
+                        acc
+                    )
+
+        go t child innerAcc =
+            case ( t, value ) of
+                ( TList c, List children ) ->
+                    List.foldl (go c) innerAcc children
+
+                ( TObject { fields }, Object fs ) ->
+                    Dict.merge
+                        (\_ _ a -> a)
+                        (\fieldName field fieldValue a -> go field.type_ fieldValue a)
+                        (\_ _ a -> a)
+                        (Dict.fromList fields)
+                        fs
+                        innerAcc
+
+                ( TOneOf opts, _ ) ->
+                    case List.Extra.find (\opt -> Type.isValidFor opt value) opts of
+                        Just c ->
+                            go c value innerAcc
+
+                        Nothing ->
+                            List.foldl (\opt a -> go opt child a) innerAcc opts
+
+                ( TRef ref, _ ) ->
+                    buildDict types ref value innerAcc
+
+                _ ->
+                    innerAcc
+    in
+    go type_ value updated
+
+
+matchesHelp : List String -> Type -> List Json -> List (Html Type)
+matchesHelp path t js =
+    let
+        ( matching, nonMatching ) =
+            List.partition (\j -> Type.isValidFor t j) js
+
+        mismatch :
+            { path : List String
+            , expected : Maybe Type
+            , found : Json
+            , suggested : Maybe Type
+            }
+            -> List (Html Type)
+        mismatch ({ expected, found } as v) =
             let
                 suggested : Type
                 suggested =
-                    case maybeSuggested of
+                    case v.suggested of
                         Just s ->
                             s
 
                         Nothing ->
                             suggestType found
             in
-            div
+            [ div
                 [ style "padding" "2px"
                 , style "border" "1px solid gray"
                 ]
                 [ button [ onClick suggested ] [ text "Try inferring type" ]
                 , br [] []
-                , p [ style "font-family" "monospace" ]
+                , p
+                    [ style "font-family" "monospace"
+                    , style "overflow-wrap" "break-word"
+                    , style "max-width" "40vw"
+                    ]
                     [ text "At "
-                    , if List.isEmpty innerPath then
+                    , if List.isEmpty v.path then
                         text "root"
 
                       else
-                        text (String.join "." (List.reverse innerPath))
+                        text (String.join "." (List.reverse v.path))
                     , case expected of
                         Just e ->
                             text (", expected " ++ Type.toString e)
@@ -175,182 +274,146 @@ matchesHelp path t j =
                         |> text
                     ]
                 ]
-                |> Err
+            ]
     in
-    case ( t, j ) of
-        ( TOneOf alternatives, _ ) ->
-            case
-                List.Extra.find
-                    (\alternative ->
-                        matchesHelp path alternative j
-                            |> Result.Extra.isOk
-                    )
-                    alternatives
-            of
-                Nothing ->
-                    mismatch path (Just t) j <|
-                        Just
-                            (TOneOf
-                                (alternatives
-                                    ++ [ suggestType j ]
-                                )
-                            )
+    case nonMatching of
+        [] ->
+            []
 
-                Just _ ->
-                    Ok ()
-
-        ( TList tchild, List children ) ->
-            children
-                |> List.indexedMap
-                    (\i child ->
-                        matchesHelp
-                            (String.fromInt i :: path)
-                            tchild
-                            child
-                    )
-                |> Result.Extra.combine
-                |> Result.map (\_ -> ())
-
-        ( TString ({ pattern, const, format } as str), String s ) ->
-            case ( const, pattern, format ) of
-                ( Just c, _, _ ) ->
-                    if c == s then
-                        Ok ()
-
-                    else
-                        mismatch path (Just t) j (Just (TString { str | const = Just s }))
-
-                ( Nothing, Just p, _ ) ->
-                    let
-                        regex : Regex
-                        regex =
-                            Regex.fromString p
-                                |> Maybe.withDefault Regex.never
-                    in
-                    if Regex.contains regex s then
-                        Ok ()
-
-                    else
-                        mismatch path (Just t) j Nothing
-
-                ( Nothing, Nothing, Just f ) ->
-                    case f of
-                        "date-time" ->
-                            case Parser.Advanced.run Rfc3339.dateTimeOffsetParser s of
-                                Ok _ ->
-                                    Ok ()
-
-                                Err _ ->
-                                    div
-                                        [ style "padding" "2px"
-                                        , style "border" "1px solid gray"
-                                        ]
-                                        [ text
-                                            ("At "
-                                                ++ String.join "." (List.reverse path)
-                                                ++ ", expected "
-                                                ++ Type.toString t
-                                                ++ ", got "
-                                                ++ Json.Encode.encode 0 (encodeJson j)
-                                            )
-                                        ]
-                                        |> Err
-
-                        _ ->
-                            div
-                                [ style "padding" "2px"
-                                , style "border" "1px solid gray"
-                                ]
-                                [ text ("Unknown format: " ++ f) ]
-                                |> Err
-
-                ( Nothing, Nothing, Nothing ) ->
-                    Ok ()
-
-        ( TInteger, Int _ ) ->
-            Ok ()
-
-        ( TNumber, Float _ ) ->
-            Ok ()
-
-        ( TBoolean, Bool _ ) ->
-            Ok ()
-
-        ( TNull, Null ) ->
-            Ok ()
-
-        ( TObject { fields, additionalProperties }, Object v ) ->
-            let
-                fieldsDict =
-                    Dict.fromList fields
-            in
-            v
-                |> Dict.toList
-                |> Result.Extra.combineMap
-                    (\( fieldName, fieldValue ) ->
-                        case Dict.get fieldName fieldsDict of
-                            Just field ->
-                                matchesHelp (fieldName :: path) field.type_ fieldValue
-                                    |> Result.mapError
-                                        (Html.map
-                                            (\suggestedType ->
-                                                TObject
-                                                    { fields =
-                                                        List.Extra.setIf
-                                                            (\( n, _ ) -> n == fieldName)
-                                                            ( fieldName, { field | type_ = suggestedType } )
-                                                            fields
-                                                    , additionalProperties = additionalProperties
-                                                    }
-                                            )
-                                        )
-
-                            Nothing ->
-                                case additionalProperties of
-                                    AdditionalPropertiesNotAllowed ->
-                                        mismatch (fieldName :: path) Nothing fieldValue <|
-                                            Just
-                                                (TObject
-                                                    { fields =
-                                                        fields
-                                                            ++ [ ( fieldName
-                                                                 , { type_ = suggestType fieldValue
-                                                                   , required = True
-                                                                   , nullable = False
-                                                                   }
-                                                                 )
-                                                               ]
-                                                    , additionalProperties = additionalProperties
-                                                    }
-                                                )
-
-                                    AdditionalPropertiesAllowed Nothing ->
-                                        Ok ()
-
-                                    AdditionalPropertiesAllowed (Just additionalType) ->
-                                        matchesHelp (fieldName :: path) additionalType fieldValue
-                                            |> Result.mapError
-                                                (Html.map
-                                                    (\suggestedType ->
-                                                        TObject
-                                                            { fields =
-                                                                fields
-                                                                    ++ [ ( fieldName
-                                                                         , { type_ = suggestType fieldValue
-                                                                           , required = True
-                                                                           , nullable = False
-                                                                           }
-                                                                         )
-                                                                       ]
-                                                            , additionalProperties = additionalProperties
-                                                            }
-                                                    )
-                                                )
-                    )
-                |> Result.map (\_ -> ())
-
-        _ ->
-            mismatch path (Just t) j Nothing
+        jsHead :: jsTail ->
+            case t of
+                -- ( TOneOf alternatives, _ ) ->
+                --     case List.Extra.find (\alternative -> Type.isValidFor alternative j) alternatives of
+                --         Nothing ->
+                --             mismatch path (Just t) j <|
+                --                 Just
+                --                     (TOneOf
+                --                         (alternatives
+                --                             ++ [ suggestType j ]
+                --                         )
+                --                     )
+                --         Just _ ->
+                --             []
+                -- ( TList tchild, List children ) ->
+                --     children
+                --         |> List.indexedMap
+                --             (\i child ->
+                --                 matchesHelp
+                --                     (String.fromInt i :: path)
+                --                     tchild
+                --                     child
+                --             )
+                --         |> List.concat
+                -- ( TString ({ pattern, const, format } as str), String s ) ->
+                --     case Type.matchesString str s of
+                --         Err (Type.IsNotConst _) ->
+                --             mismatch path (Just t) j (Just (TString { str | const = Just s }))
+                --         Err Type.DoesNotMatchPattern ->
+                --             mismatch path (Just t) j Nothing
+                --         Err (Type.UnknownFormat f) ->
+                --             div
+                --                 [ style "padding" "2px"
+                --                 , style "border" "1px solid gray"
+                --                 ]
+                --                 [ text ("Unknown format: " ++ f) ]
+                --                 |> Err
+                --         Err (Type.DoesNotMatchFormat f) ->
+                --             div
+                --                 [ style "padding" "2px"
+                --                 , style "border" "1px solid gray"
+                --                 ]
+                --                 [ text
+                --                     ("At "
+                --                         ++ String.join "." (List.reverse path)
+                --                         ++ ", expected "
+                --                         ++ Type.toString t
+                --                         ++ ", got "
+                --                         ++ Json.Encode.encode 0 (encodeJson j)
+                --                     )
+                --                 ]
+                --                 |> Err
+                --         Ok () ->
+                --             []
+                -- ( TInteger, Int _ ) ->
+                --     []
+                -- ( TNumber, Float _ ) ->
+                --     []
+                -- ( TBoolean, Bool _ ) ->
+                --     []
+                -- ( TNull, Null ) ->
+                --     []
+                -- ( TObject { fields, additionalProperties }, Object v ) ->
+                --     let
+                --         fieldsDict =
+                --             Dict.fromList fields
+                --     in
+                --     v
+                --         |> Dict.toList
+                --         |> List.concatMap
+                --             (\( fieldName, fieldValue ) ->
+                --                 case Dict.get fieldName fieldsDict of
+                --                     Just field ->
+                --                         matchesHelp (fieldName :: path) field.type_ fieldValue
+                --                             |> List.map
+                --                                 (Html.map
+                --                                     (\suggestedType ->
+                --                                         TObject
+                --                                             { fields =
+                --                                                 List.Extra.setIf
+                --                                                     (\( n, _ ) -> n == fieldName)
+                --                                                     ( fieldName, { field | type_ = suggestedType } )
+                --                                                     fields
+                --                                             , additionalProperties = additionalProperties
+                --                                             }
+                --                                     )
+                --                                 )
+                --                     Nothing ->
+                --                         case additionalProperties of
+                --                             AdditionalPropertiesNotAllowed ->
+                --                                 mismatch (fieldName :: path) Nothing fieldValue <|
+                --                                     Just
+                --                                         (TObject
+                --                                             { fields =
+                --                                                 fields
+                --                                                     ++ [ ( fieldName
+                --                                                          , { type_ = suggestType fieldValue
+                --                                                            , required = True
+                --                                                            , nullable = False
+                --                                                            }
+                --                                                          )
+                --                                                        ]
+                --                                             , additionalProperties = additionalProperties
+                --                                             }
+                --                                         )
+                --                             AdditionalPropertiesAllowed Nothing ->
+                --                                 []
+                --                             AdditionalPropertiesAllowed (Just additionalType) ->
+                --                                 matchesHelp additionalType fieldValue
+                --                                     |> List.map
+                --                                         (Html.map
+                --                                             (\suggestedType ->
+                --                                                 TObject
+                --                                                     { fields =
+                --                                                         fields
+                --                                                             ++ [ ( fieldName
+                --                                                                  , { type_ = suggestType fieldValue
+                --                                                                    , required = True
+                --                                                                    , nullable = False
+                --                                                                    }
+                --                                                                  )
+                --                                                                ]
+                --                                                     , additionalProperties = additionalProperties
+                --                                                     }
+                --                                             )
+                --                                         )
+                --             )
+                _ ->
+                    mismatch
+                        { path = path
+                        , expected = Just t
+                        , found = jsHead
+                        , suggested = Nothing
+                        }
 
 
 cut : Json -> Json
@@ -431,13 +494,56 @@ update msg model =
         Input input ->
             ( { model
                 | input = input
-                , json = Json.Decode.decodeString jsonDecoder input
+                , json = Json.Decode.decodeString Json.decoder input
               }
             , Cmd.none
             )
 
-        Type type_ ->
-            ( { model | type_ = type_ }, Cmd.none )
+        AddType ->
+            let
+                newKey : String
+                newKey =
+                    let
+                        typeNames : Set String
+                        typeNames =
+                            Dict.keys model.types |> Set.fromList
+
+                        go n =
+                            let
+                                candidate : String
+                                candidate =
+                                    "t" ++ String.fromInt n
+                            in
+                            if Set.member candidate typeNames then
+                                go (n + 1)
+
+                            else
+                                candidate
+                    in
+                    go 1
+            in
+            ( { model | types = Dict.insert newKey TNull model.types }, Cmd.none )
+
+        Type key type_ ->
+            ( { model | types = Dict.insert key type_ model.types }, Cmd.none )
+
+        RenameType old new ->
+            case ( Dict.get old model.types, Dict.get new model.types ) of
+                ( Just t, Nothing ) ->
+                    ( { model
+                        | types =
+                            model.types
+                                |> Dict.remove old
+                                |> Dict.insert new t
+                      }
+                    , Cmd.none
+                    )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        RemoveType name ->
+            ( { model | types = Dict.remove name model.types }, Cmd.none )
 
         DownloadedJson (Err (Http.BadBody e)) ->
             ( { model | input = e }, Cmd.none )

@@ -245,10 +245,6 @@ buildDict seen types typeName value acc =
                                 ( t, acc )
 
                             Nothing ->
-                                let
-                                    _ =
-                                        Debug.log "Failed to match in oneof" value
-                                in
                                 ( t
                                 , Dict.insert typeName
                                     ( t
@@ -300,27 +296,12 @@ buildDict seen types typeName value acc =
                     ( TOneOf opts, _ ) ->
                         case tryMatchOneOf types opts child of
                             Just s ->
-                                let
-                                    _ =
-                                        Debug.log "Matched oneOf" value
-
-                                    _ =
-                                        Debug.log "Matched to" s
-                                in
                                 go s child innerAcc
 
                             Nothing ->
-                                let
-                                    _ =
-                                        Debug.log "Failed to match in oneof" value
-                                in
                                 List.foldl (\opt a -> go opt child a) innerAcc opts
 
                     ( TRef ref, _ ) ->
-                        let
-                            _ =
-                                Debug.log "ref" ref
-                        in
                         buildDict (Set.insert typeName seen) types ref child innerAcc
 
                     _ ->

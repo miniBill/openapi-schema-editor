@@ -183,13 +183,14 @@ editor typeNames t =
         default =
             defaultExtracted t
 
-        ( extracted, additional ) =
+        ( extracted, inline, additional ) =
             case t of
                 TObject obj ->
                     objectEditor typeNames obj default
 
                 TList list ->
                     ( { default | list = Just list }
+                    , Html.text ""
                     , [ Html.map TList (editor typeNames list) ]
                     )
 
@@ -197,23 +198,24 @@ editor typeNames t =
                     stringEditor str default
 
                 TInteger ->
-                    ( default, [] )
+                    ( default, Html.text "", [] )
 
                 TNumber ->
-                    ( default, [] )
+                    ( default, Html.text "", [] )
 
                 TBoolean ->
-                    ( default, [] )
+                    ( default, Html.text "", [] )
 
                 TNull ->
-                    ( default, [] )
+                    ( default, Html.text "", [] )
 
                 TRef name ->
                     ( { default | ref = Just name }
+                    , Html.text ""
                     , [ Html.label
                             [ Html.Attributes.style "white-space" "no-wrap" ]
                             [ Html.text "$ref: "
-                            , Theme.select
+                            , Theme.select []
                                 (List.map
                                     (\typeName ->
                                         ( if String.isEmpty typeName then
@@ -241,22 +243,22 @@ editor typeNames t =
                             )
                         ]
                         [ Html.text "➕ New alternative" ]
-                        :: (children
-                                |> List.indexedMap
-                                    (\i child ->
-                                        [ Html.div [] []
-                                        , editor typeNames child
-                                            |> Html.map
-                                                (\newChild ->
-                                                    TOneOf (List.Extra.setAt i newChild children)
-                                                )
-                                        , Html.button
-                                            [ Html.Events.onClick (TOneOf (List.Extra.removeAt i children)) ]
-                                            [ Html.text "🗑️" ]
-                                        ]
-                                    )
-                                |> List.concat
-                           )
+                    , (children
+                        |> List.indexedMap
+                            (\i child ->
+                                [ Html.div [] []
+                                , editor typeNames child
+                                    |> Html.map
+                                        (\newChild ->
+                                            TOneOf (List.Extra.setAt i newChild children)
+                                        )
+                                , Html.button
+                                    [ Html.Events.onClick (TOneOf (List.Extra.removeAt i children)) ]
+                                    [ Html.text "🗑️" ]
+                                ]
+                            )
+                        |> List.concat
+                      )
                         |> Html.div
                             [ Html.Attributes.style "display" "grid"
                             , Html.Attributes.style "gap" "4px"
@@ -270,32 +272,39 @@ editor typeNames t =
         , Html.Attributes.style "flex-direction" "column"
         , Html.Attributes.style "gap" "4px"
         ]
-        (Theme.select
-            ([ TObject (Maybe.withDefault emptyObject extracted.obj)
-             , TList (Maybe.withDefault TInteger extracted.list)
-             , TOneOf extracted.oneOf
-             , TString
-                (Maybe.withDefault
-                    { pattern = Nothing
-                    , const = Nothing
-                    , format = Nothing
-                    }
-                    extracted.string
+        (Html.div
+            [ Html.Attributes.style "display" "flex"
+            , Html.Attributes.style "gap" "4px"
+            ]
+            [ Theme.select
+                [ Html.Attributes.style "flex" "1" ]
+                ([ TObject (Maybe.withDefault emptyObject extracted.obj)
+                 , TList (Maybe.withDefault TInteger extracted.list)
+                 , TOneOf extracted.oneOf
+                 , TString
+                    (Maybe.withDefault
+                        { pattern = Nothing
+                        , const = Nothing
+                        , format = Nothing
+                        }
+                        extracted.string
+                    )
+                 , TInteger
+                 , TNumber
+                 , TBoolean
+                 , TNull
+                 , TRef (Maybe.withDefault "" extracted.ref)
+                 ]
+                    |> List.map (\k -> ( toShortString k, k ))
                 )
-             , TInteger
-             , TNumber
-             , TBoolean
-             , TNull
-             , TRef (Maybe.withDefault "" extracted.ref)
-             ]
-                |> List.map (\k -> ( toShortString k, k ))
-            )
-            t
+                t
+            , inline
+            ]
             :: additional
         )
 
 
-stringEditor : StringData -> Extracted -> ( Extracted, List (Html Type) )
+stringEditor : StringData -> Extracted -> ( Extracted, Html Type, List (Html Type) )
 stringEditor str default =
     let
         checkboxedInput : String -> Maybe String -> (Maybe String -> StringData) -> List (Html Type)
@@ -334,6 +343,7 @@ stringEditor str default =
             ]
     in
     ( { default | string = Just str }
+    , Html.text ""
     , [ Html.div
             [ Html.Attributes.style "display" "grid"
             , Html.Attributes.style "grid-template-columns" "auto 1fr"
@@ -365,7 +375,7 @@ defaultExtracted t =
     }
 
 
-objectEditor : List String -> ObjectData -> Extracted -> ( Extracted, List (Html Type) )
+objectEditor : List String -> ObjectData -> Extracted -> ( Extracted, Html Type, List (Html Type) )
 objectEditor typeNames obj default =
     let
         fieldsViews : List (Html Type)
@@ -427,7 +437,7 @@ objectEditor typeNames obj default =
 
         additionalPropertiesViews : List (Html Type)
         additionalPropertiesViews =
-            [ Theme.select
+            [ Theme.select []
                 [ ( "No additional properties"
                   , TObject
                         { obj
@@ -463,12 +473,12 @@ objectEditor typeNames obj default =
     in
     ( { default | obj = Just obj }
     , newFieldView
-        :: Html.div
-            [ Html.Attributes.style "display" "grid"
-            , Html.Attributes.style "gap" "4px"
-            , Html.Attributes.style "grid-template-columns" "auto auto auto"
-            ]
-            fieldsViews
+    , Html.div
+        [ Html.Attributes.style "display" "grid"
+        , Html.Attributes.style "gap" "4px"
+        , Html.Attributes.style "grid-template-columns" "auto auto auto"
+        ]
+        fieldsViews
         :: additionalPropertiesViews
     )
 

@@ -1,13 +1,13 @@
 module Theme exposing (select)
 
-import Html exposing (Html)
+import Html exposing (Attribute, Html)
 import Html.Attributes
 import Html.Events
 import List.Extra
 
 
-select : List ( String, value ) -> value -> Html value
-select selectOptions currentValue =
+select : List (Attribute value) -> List ( String, value ) -> value -> Html value
+select attrs selectOptions currentValue =
     selectOptions
         |> List.map
             (\( label, optionValue ) ->
@@ -18,7 +18,7 @@ select selectOptions currentValue =
                     [ Html.text label ]
             )
         |> Html.select
-            [ Html.Events.onInput
+            (Html.Events.onInput
                 (\key ->
                     selectOptions
                         |> List.Extra.findMap
@@ -31,4 +31,5 @@ select selectOptions currentValue =
                             )
                         |> Maybe.withDefault currentValue
                 )
-            ]
+                :: attrs
+            )

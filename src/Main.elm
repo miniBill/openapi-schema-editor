@@ -147,16 +147,25 @@ viewMatches types j =
         |> Dict.toList
         |> List.concatMap
             (\( typeName, ( type_, values ) ) ->
-                [ Html.div []
-                    [ if String.isEmpty typeName then
-                        Html.text "<root>"
+                let
+                    problems : List (Html Type)
+                    problems =
+                        findProblems type_ values
+                in
+                if List.isEmpty problems then
+                    []
 
-                      else
-                        Html.text typeName
+                else
+                    [ Html.div []
+                        [ if String.isEmpty typeName then
+                            Html.text "<root>"
+
+                          else
+                            Html.text typeName
+                        ]
+                    , Html.div [] problems
+                        |> Html.map (Type typeName)
                     ]
-                , Html.div [] (matchesHelp type_ values)
-                    |> Html.map (Type typeName)
-                ]
             )
         |> div
             [ style "display" "grid"
@@ -229,8 +238,8 @@ buildDict types typeName value acc =
     go type_ value updated
 
 
-matchesHelp : Type -> List Json -> List (Html Type)
-matchesHelp t js =
+findProblems : Type -> List Json -> List (Html Type)
+findProblems t js =
     let
         ( matching, nonMatching ) =
             List.partition (\j -> Type.isValidFor t j) js

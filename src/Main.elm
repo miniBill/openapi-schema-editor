@@ -1,27 +1,23 @@
 module Main exposing (main)
 
 import Browser
-import Cmd.Extra exposing (add)
+import Codec exposing (Codec)
 import Dict exposing (Dict)
-import Dict.Extra
-import Html exposing (Html, br, button, div, i, main_, p, pre, select, text, textarea)
-import Html.Attributes exposing (checked, rows, style, type_, value)
-import Html.Events exposing (onCheck, onClick, onInput)
+import File exposing (File)
+import File.Download
+import File.Select
+import Html exposing (Html, button, div, main_, p, text, textarea)
+import Html.Attributes exposing (style, value)
+import Html.Events exposing (onClick, onInput)
 import Http
 import Json exposing (Json(..))
-import Json.Decode exposing (Decoder)
+import Json.Decode
 import Json.Encode
 import List.Extra
-import Maybe.Extra
-import Parser.Advanced
-import Regex exposing (Regex)
-import Result.Extra
-import Rfc3339
 import Set exposing (Set)
 import String.Extra
-import Theme
-import Type exposing (AdditionalProperties(..), Type(..))
-import Url
+import Task
+import Type exposing (Type(..))
 
 
 type alias Model =
@@ -38,6 +34,10 @@ type Msg
     | DownloadedJson (Result Http.Error Json)
     | AddType
     | RemoveType String
+    | Save
+    | Load
+    | SelectedFile File
+    | ReadFile String
 
 
 main : Program () Model Msg
@@ -66,16 +66,32 @@ init _ =
 view : Model -> Html Msg
 view model =
     main_
-        [ style "display" "flex"
+        [ style "display" "grid"
+        , style "grid-template-columns" "auto auto auto"
         , style "padding" "8px"
         , style "gap" "8px"
+        , style "height" "100dvh"
         ]
-        [ textarea
+        [ div
+            [ style "grid-column" "1 / span 3"
+            ]
+            [ button
+                [ onClick Save
+                ]
+                [ text "Save" ]
+            , Html.text " "
+            , button
+                [ onClick Load
+                ]
+                [ text "Load" ]
+            ]
+        , textarea
             [ value model.input
             , onInput Input
             , style "flex" "1"
-            , style "height" "calc(100dvh - 16px)"
             , style "font-family" "monospace"
+            , style "height" "calc(100dvh - 48px)"
+            , style "overflow-y" "scroll"
             ]
             []
         , div
@@ -84,10 +100,13 @@ view model =
             , style "grid-template-columns" "auto 1fr auto"
             , style "align-self" "start"
             , style "gap" "4px"
+            , style "overflow-y" "scroll"
             ]
             (viewTypes model.types)
         , div
-            [ style "flex" "1" ]
+            [ style "flex" "1"
+            , style "overflow-y" "scroll"
+            ]
             [ case model.json of
                 Err e ->
                     e
@@ -99,7 +118,7 @@ view model =
                                     [ style "font-family" "monospace" ]
                                     [ text line ]
                             )
-                        |> Html.div []
+                        |> div []
 
                 Ok json ->
                     viewMatches model.types json
@@ -129,13 +148,13 @@ viewTypes types =
 viewType : List String -> ( String, Type ) -> List (Html Msg)
 viewType typeNames ( name, type_ ) =
     [ if String.isEmpty name then
-        Html.p [] [ Html.text "<root>" ]
+        p [] [ text "<root>" ]
 
       else
         Html.input [ onInput (RenameType name), value name ] []
     , Html.map (Type name) (Type.editor typeNames type_)
     , if String.isEmpty name then
-        Html.div [] []
+        div [] []
 
       else
         button [ onClick (RemoveType name) ] [ text "🗑️" ]
@@ -162,14 +181,14 @@ viewMatches types j =
                     []
 
                 else
-                    [ Html.div []
+                    [ div []
                         [ if String.isEmpty typeName then
-                            Html.text "<root>"
+                            text "<root>"
 
                           else
-                            Html.text typeName
+                            text typeName
                         ]
-                    , Html.div [] problems
+                    , div [] problems
                         |> Html.map (Type typeName)
                     ]
             )
@@ -217,7 +236,7 @@ buildDict seen types typeName value acc =
                     ( TObject { fields }, Object fs ) ->
                         Dict.merge
                             (\_ _ a -> a)
-                            (\fieldName field fieldValue a -> go field.type_ fieldValue a)
+                            (\_ field fieldValue a -> go field.type_ fieldValue a)
                             (\_ _ a -> a)
                             (Dict.fromList fields)
                             fs
@@ -284,13 +303,14 @@ buildDict seen types typeName value acc =
 findProblems : Maybe Type -> List Json -> List (Html Type)
 findProblems maybeType js =
     let
-        ( matching, nonMatching ) =
+        nonMatching : List Json
+        nonMatching =
             case maybeType of
                 Nothing ->
-                    ( [], js )
+                    js
 
                 Just t ->
-                    List.partition (\j -> Type.isValidFor t j) js
+                    List.Extra.removeWhen (\j -> Type.isValidFor t j) js
     in
     case nonMatching of
         [] ->
@@ -319,7 +339,7 @@ findProblems maybeType js =
                         ]
                         [ case problem of
                             Nothing ->
-                                Html.text ""
+                                text ""
 
                             Just problemString ->
                                 paragraph [ text problemString ]
@@ -428,7 +448,7 @@ findProblems maybeType js =
                                     }
                                 )
 
-                        (Type.WrongFieldType fieldName { expected, found }) :: _ ->
+                        (Type.WrongFieldType fieldName { found }) :: _ ->
                             mismatch
                                 (Just ("Wrong type for field " ++ fieldName))
                                 (TObject
@@ -461,7 +481,16 @@ cut j =
         Object fields ->
             Object (Dict.map (always cut) fields)
 
-        _ ->
+        Int _ ->
+            j
+
+        Float _ ->
+            j
+
+        Bool _ ->
+            j
+
+        Null ->
             j
 
 
@@ -535,6 +564,28 @@ update msg model =
               }
             , Cmd.none
             )
+
+        Save ->
+            ( model, File.Download.string "openapi-schema-types.json" "application/json" (Codec.encodeToString 2 typesCodec model.types) )
+
+        Load ->
+            ( model, File.Select.file [ "application/json" ] SelectedFile )
+
+        SelectedFile file ->
+            ( model, File.toString file |> Task.perform ReadFile )
+
+        ReadFile file ->
+            case Codec.decodeString typesCodec file of
+                Err _ ->
+                    ( model, Cmd.none )
+
+                Ok types ->
+                    ( { model | types = types }, Cmd.none )
+
+
+typesCodec : Codec (Dict String Type)
+typesCodec =
+    Codec.dict Type.codec
 
 
 subscriptions : Model -> Sub Msg

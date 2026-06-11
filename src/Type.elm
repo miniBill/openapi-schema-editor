@@ -7,19 +7,15 @@ module Type exposing
     , StringData
     , StringMatchProblem(..)
     , Type(..)
-    , defaultExtracted
+    , codec
     , editor
-    , emptyObject
     , isValidFor
     , matchesObject
-    , matchesString
-    , objectEditor
-    , stringEditor
     , suggest
     , toString
-    , union
     )
 
+import Codec exposing (Codec)
 import Dict exposing (Dict)
 import Dict.Extra
 import Html exposing (Html)
@@ -77,10 +73,10 @@ type AdditionalProperties
 toShortString : Type -> String
 toShortString t =
     case t of
-        TObject data ->
+        TObject _ ->
             "object"
 
-        TList child ->
+        TList _ ->
             "list"
 
         TString _ ->
@@ -98,10 +94,10 @@ toShortString t =
         TNull ->
             "null"
 
-        TOneOf alt ->
+        TOneOf _ ->
             "oneOf"
 
-        TRef name ->
+        TRef _ ->
             "$ref"
 
 
@@ -686,7 +682,7 @@ suggest j =
                             (\( fieldName, fieldValue ) ->
                                 case ( fieldName, fieldValue ) of
                                     ( "type", String s ) ->
-                                        ( fieldName
+                                        ( "type"
                                         , { type_ = TString { format = Nothing, pattern = Nothing, const = Just s }
                                           , required = True
                                           , nullable = False
@@ -703,3 +699,92 @@ suggest j =
                             )
                 , additionalProperties = AdditionalPropertiesNotAllowed
                 }
+
+
+codec : Codec Type
+codec =
+    Codec.recursive
+        (\go ->
+            Codec.custom
+                (\vList vString vInteger vNumber vBoolean vNull vObject vOneOf vRef value ->
+                    case value of
+                        TList c ->
+                            vList c
+
+                        TString c ->
+                            vString c
+
+                        TInteger ->
+                            vInteger
+
+                        TNumber ->
+                            vNumber
+
+                        TBoolean ->
+                            vBoolean
+
+                        TNull ->
+                            vNull
+
+                        TObject c ->
+                            vObject c
+
+                        TOneOf c ->
+                            vOneOf c
+
+                        TRef c ->
+                            vRef c
+                )
+                |> Codec.variant1 "TList" TList go
+                |> Codec.variant1 "TString" TString stringDataCodec
+                |> Codec.variant0 "TInteger" TInteger
+                |> Codec.variant0 "TNumber" TNumber
+                |> Codec.variant0 "TBoolean" TBoolean
+                |> Codec.variant0 "TNull" TNull
+                |> Codec.variant1 "TObject" TObject objectDataCodec
+                |> Codec.variant1 "TOneOf" TOneOf (Codec.list go)
+                |> Codec.variant1 "TRef" TRef Codec.string
+                |> Codec.buildCustom
+        )
+
+
+stringDataCodec : Codec StringData
+stringDataCodec =
+    Codec.object StringData
+        |> Codec.optionalField "pattern" .pattern Codec.string
+        |> Codec.optionalField "const" .const Codec.string
+        |> Codec.optionalField "format" .format Codec.string
+        |> Codec.buildObject
+
+
+objectDataCodec : Codec ObjectData
+objectDataCodec =
+    Codec.object ObjectData
+        |> Codec.field "fields" .fields (Codec.list (Codec.tuple Codec.string fieldCodec))
+        |> Codec.field "additionalProperties" .additionalProperties additionalPropertiesCodec
+        |> Codec.buildObject
+
+
+fieldCodec : Codec Field
+fieldCodec =
+    Codec.object Field
+        |> Codec.field "type_" .type_ (Codec.lazy (\_ -> codec))
+        |> Codec.field "required" .required Codec.bool
+        |> Codec.field "nullable" .nullable Codec.bool
+        |> Codec.buildObject
+
+
+additionalPropertiesCodec : Codec AdditionalProperties
+additionalPropertiesCodec =
+    Codec.custom
+        (\additionalPropertiesAllowedEncoder additionalPropertiesNotAllowedEncoder value ->
+            case value of
+                AdditionalPropertiesAllowed arg0 ->
+                    additionalPropertiesAllowedEncoder arg0
+
+                AdditionalPropertiesNotAllowed ->
+                    additionalPropertiesNotAllowedEncoder
+        )
+        |> Codec.variant1 "AdditionalPropertiesAllowed" AdditionalPropertiesAllowed (Codec.nullable (Codec.lazy (\_ -> codec)))
+        |> Codec.variant0 "AdditionalPropertiesNotAllowed" AdditionalPropertiesNotAllowed
+        |> Codec.buildCustom

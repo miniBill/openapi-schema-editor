@@ -195,6 +195,12 @@ viewCurrentTab model problems =
 
               else
                 Html.input [ onInput (RenameType model.selectedType), value model.selectedType ] []
+            , case usedBy model.types model.selectedType of
+                [] ->
+                    text ""
+
+                used ->
+                    p [] [ text ("Used by " ++ String.join ", " used) ]
             , Html.map (Type model.selectedType) (Type.editor (Dict.keys model.types) type_)
             , div []
                 (case model.json of
@@ -214,6 +220,39 @@ viewCurrentTab model problems =
                             |> Maybe.withDefault []
                 )
             ]
+
+
+usedBy : Dict String Type -> String -> List String
+usedBy types name =
+    let
+        uses : Type -> Bool
+        uses t =
+            case t of
+                TRef r ->
+                    r == name
+
+                TList c ->
+                    uses c
+
+                TObject { fields } ->
+                    List.any (\( _, field ) -> uses field.type_) fields
+
+                TOneOf alts ->
+                    List.any uses alts
+
+                _ ->
+                    False
+    in
+    Dict.foldl
+        (\typeName t acc ->
+            if uses t then
+                typeName :: acc
+
+            else
+                acc
+        )
+        []
+        types
 
 
 findProblems : Dict String Type -> Json -> Dict String (List (Html Msg))

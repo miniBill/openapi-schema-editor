@@ -24,6 +24,7 @@ import Html exposing (Html)
 import Html.Attributes
 import Html.Events
 import Json exposing (Json(..))
+import Json.Encode
 import List.Extra
 import Parser.Advanced
 import Regex exposing (Regex)
@@ -112,8 +113,23 @@ toString t =
         TList child ->
             toString child ++ "[]"
 
-        TString _ ->
-            "string"
+        TString data ->
+            case data.const of
+                Just c ->
+                    escape c
+
+                Nothing ->
+                    case data.pattern of
+                        Just p ->
+                            "/" ++ String.slice 1 -1 (escape p) ++ "/"
+
+                        Nothing ->
+                            case data.format of
+                                Just f ->
+                                    "string:" ++ f
+
+                                Nothing ->
+                                    "string"
 
         TInteger ->
             "integer"
@@ -132,6 +148,11 @@ toString t =
 
         TRef name ->
             "$ref: " ++ name
+
+
+escape : String -> String
+escape s =
+    Json.Encode.encode 0 (Json.Encode.string s)
 
 
 fieldToString : ( String, Field ) -> String

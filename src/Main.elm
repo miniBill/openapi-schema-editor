@@ -144,7 +144,7 @@ viewType typeNames ( name, type_ ) =
 viewMatches : Dict String Type -> Json -> Html Msg
 viewMatches types j =
     let
-        dict : Dict String ( Type, List Json )
+        dict : Dict String ( Maybe Type, List Json )
         dict =
             buildDict Set.empty types "" j Dict.empty
     in
@@ -179,29 +179,21 @@ viewMatches types j =
             ]
 
 
-buildDict : Set String -> Dict String Type -> String -> Json -> Dict String ( Type, List Json ) -> Dict String ( Type, List Json )
+buildDict : Set String -> Dict String Type -> String -> Json -> Dict String ( Maybe Type, List Json ) -> Dict String ( Maybe Type, List Json )
 buildDict seen types typeName value acc =
     if Set.member typeName seen then
         acc
 
     else
         let
-            ( type_, updated ) =
+            ( maybeType, updated ) =
                 case Dict.get typeName acc of
                     Nothing ->
-                        case Dict.get typeName types of
-                            Nothing ->
-                                let
-                                    _ =
-                                        Debug.log "Type not found" typeName
-
-                                    _ =
-                                        Debug.log "Available" (Dict.keys acc)
-                                in
-                                ( TNull, Dict.insert typeName ( TNull, [ value ] ) acc )
-
-                            Just t ->
-                                ( t, Dict.insert typeName ( t, [ value ] ) acc )
+                        let
+                            t =
+                                Dict.get typeName types
+                        in
+                        ( t, Dict.insert typeName ( t, [ value ] ) acc )
 
                     Just ( t, list ) ->
                         ( t
@@ -244,14 +236,24 @@ buildDict seen types typeName value acc =
                     _ ->
                         innerAcc
         in
-        go type_ value updated
+        case maybeType of
+            Nothing ->
+                updated
+
+            Just t ->
+                go t value updated
 
 
-findProblems : Type -> List Json -> List (Html Type)
-findProblems t js =
+findProblems : Maybe Type -> List Json -> List (Html Type)
+findProblems maybeType js =
     let
         ( matching, nonMatching ) =
-            List.partition (\j -> Type.isValidFor t j) js
+            case maybeType of
+                Nothing ->
+                    ( [], js )
+
+                Just t ->
+                    List.partition (\j -> Type.isValidFor t j) js
     in
     case nonMatching of
         [] ->
@@ -259,6 +261,16 @@ findProblems t js =
 
         jsHead :: _ ->
             let
+                paragraph : List (Html msg) -> Html msg
+                paragraph children =
+                    p
+                        [ style "font-family" "monospace"
+                        , style "overflow-wrap" "break-word"
+                        , style "max-width" "40vw"
+                        , style "white-space" "pre-wrap"
+                        ]
+                        children
+
                 mismatch : Maybe String -> Type -> List (Html Type)
                 mismatch problem suggested =
                     [ div
@@ -273,34 +285,18 @@ findProblems t js =
                                 Html.text ""
 
                             Just problemString ->
-                                p
-                                    [ style "font-family" "monospace"
-                                    , style "overflow-wrap" "break-word"
-                                    , style "max-width" "40vw"
-                                    , style "white-space" "pre-wrap"
-                                    ]
-                                    [ text problemString ]
-                        , p
-                            [ style "font-family" "monospace"
-                            , style "overflow-wrap" "break-word"
-                            , style "max-width" "40vw"
-                            , style "white-space" "pre-wrap"
-                            ]
-                            [ text "Expected  ", text (Type.toString t) ]
-                        , p
-                            [ style "font-family" "monospace"
-                            , style "overflow-wrap" "break-word"
-                            , style "max-width" "40vw"
-                            ]
+                                paragraph [ text problemString ]
+                        , case maybeType of
+                            Just t ->
+                                paragraph [ text "Expected  ", text (Type.toString t) ]
+
+                            Nothing ->
+                                paragraph [ text "Unknown type" ]
+                        , paragraph
                             [ text "Suggested ", text (String.Extra.ellipsis 300 (Type.toString suggested)) ]
                         , button [ onClick suggested ]
-                            [ text "Use suggested instead"
-                            ]
-                        , p
-                            [ style "font-family" "monospace"
-                            , style "overflow-wrap" "break-word"
-                            , style "max-width" "40vw"
-                            ]
+                            [ text "Use suggested instead" ]
+                        , paragraph
                             [ text "Got "
                             , jsHead
                                 |> cut
@@ -312,7 +308,7 @@ findProblems t js =
                         ]
                     ]
             in
-            case ( t, jsHead ) of
+            case ( maybeType, jsHead ) of
                 -- ( TOneOf alternatives, _ ) ->
                 --     case List.Extra.find (\alternative -> Type.isValidFor alternative j) alternatives of
                 --         Nothing ->
@@ -373,7 +369,7 @@ findProblems t js =
                 --     []
                 -- ( TNull, Null ) ->
                 --     []
-                ( TObject data, Object v ) ->
+                ( Just (TObject data), Object v ) ->
                     case Type.matchesObject data v of
                         [] ->
                             []
@@ -462,7 +458,7 @@ suggestType j =
                             TString { pattern = Nothing, const = Nothing, format = Just "uri" }
 
                         Nothing ->
-                            TString { pattern = Nothing, const = Nothing, format = Just "uri" }
+                            TString { pattern = Nothing, const = Nothing, format = Nothing }
 
         Bool _ ->
             TBoolean
@@ -477,12 +473,22 @@ suggestType j =
                         |> Dict.toList
                         |> List.map
                             (\( fieldName, fieldValue ) ->
-                                ( fieldName
-                                , { type_ = suggestType fieldValue
-                                  , required = True
-                                  , nullable = False
-                                  }
-                                )
+                                case ( fieldName, fieldValue ) of
+                                    ( "type", String s ) ->
+                                        ( fieldName
+                                        , { type_ = TString { format = Nothing, pattern = Nothing, const = Just s }
+                                          , required = True
+                                          , nullable = False
+                                          }
+                                        )
+
+                                    _ ->
+                                        ( fieldName
+                                        , { type_ = suggestType fieldValue
+                                          , required = True
+                                          , nullable = False
+                                          }
+                                        )
                             )
                 , additionalProperties = AdditionalPropertiesNotAllowed
                 }

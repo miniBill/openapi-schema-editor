@@ -1,11 +1,11 @@
 module Type exposing
-    ( AdditionalProperties(..)
+    ( AdditionalProperties
     , Extracted
     , Field
     , ObjectData
     , ObjectMatchProblem(..)
     , StringData
-    , StringMatchProblem(..)
+    , StringMatchProblem
     , Type(..)
     , codec
     , editor
@@ -642,6 +642,7 @@ matchesObject { fields, additionalProperties } v =
 
 suggest : Json -> Type
 suggest j =
+    -- IGNORE TCO
     case j of
         List [] ->
             TList TNull
@@ -689,9 +690,9 @@ suggest j =
                                           }
                                         )
 
-                                    _ ->
-                                        ( fieldName
-                                        , { type_ = suggest fieldValue
+                                    ( name, value ) ->
+                                        ( name
+                                        , { type_ = suggest value
                                           , required = True
                                           , nullable = False
                                           }

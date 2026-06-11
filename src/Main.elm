@@ -24,6 +24,7 @@ type alias Model =
     { input : String
     , json : Result Json.Decode.Error Json
     , types : Dict String Type
+    , selectedType : String
     }
 
 
@@ -55,6 +56,7 @@ init _ =
     ( { input = ""
       , json = Json.Decode.decodeString Json.decoder ""
       , types = Dict.empty
+      , selectedType = ""
       }
     , Http.get
         { url = "big.json"
@@ -79,7 +81,7 @@ view model =
                 [ onClick Save
                 ]
                 [ text "Save" ]
-            , Html.text " "
+            , text " "
             , button
                 [ onClick Load
                 ]
@@ -88,40 +90,37 @@ view model =
         , textarea
             [ value model.input
             , onInput Input
-            , style "flex" "1"
             , style "font-family" "monospace"
             , style "height" "calc(100dvh - 48px)"
             , style "overflow-y" "scroll"
             ]
             []
         , div
-            [ style "flex" "1"
-            , style "display" "grid"
-            , style "grid-template-columns" "auto 1fr auto"
-            , style "align-self" "start"
-            , style "gap" "4px"
-            , style "overflow-y" "scroll"
-            ]
-            (viewTypes model.types)
-        , div
-            [ style "flex" "1"
-            , style "overflow-y" "scroll"
-            ]
-            [ case model.json of
-                Err e ->
-                    e
-                        |> Json.Decode.errorToString
-                        |> String.split "\n"
-                        |> List.map
-                            (\line ->
-                                p
-                                    [ style "font-family" "monospace" ]
-                                    [ text line ]
-                            )
-                        |> div []
+            []
+            [ div
+                [ style "display" "grid"
+                , style "grid-template-columns" "auto 1fr auto"
+                , style "align-self" "start"
+                , style "gap" "4px"
+                ]
+                (viewTypes model.types)
+            , div []
+                [ case model.json of
+                    Err e ->
+                        e
+                            |> Json.Decode.errorToString
+                            |> String.split "\n"
+                            |> List.map
+                                (\line ->
+                                    p
+                                        [ style "font-family" "monospace" ]
+                                        [ text line ]
+                                )
+                            |> div []
 
-                Ok json ->
-                    viewMatches model.types json
+                    Ok json ->
+                        viewMatches model.types json
+                ]
             ]
         ]
 
@@ -268,7 +267,28 @@ buildDict seen types typeName value acc =
                                                                             )
                                                                             fields
 
-                                                                    _ ->
+                                                                    TList _ ->
+                                                                        False
+
+                                                                    TString _ ->
+                                                                        False
+
+                                                                    TInteger ->
+                                                                        False
+
+                                                                    TNumber ->
+                                                                        False
+
+                                                                    TBoolean ->
+                                                                        False
+
+                                                                    TNull ->
+                                                                        False
+
+                                                                    TOneOf _ ->
+                                                                        False
+
+                                                                    TRef _ ->
                                                                         False
                                                             )
                                                             opts
@@ -276,7 +296,22 @@ buildDict seen types typeName value acc =
                                                     _ ->
                                                         Nothing
 
-                                            _ ->
+                                            List _ ->
+                                                Nothing
+
+                                            Int _ ->
+                                                Nothing
+
+                                            Float _ ->
+                                                Nothing
+
+                                            String _ ->
+                                                Nothing
+
+                                            Bool _ ->
+                                                Nothing
+
+                                            Null ->
                                                 Nothing
                                 in
                                 case specific of

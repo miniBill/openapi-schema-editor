@@ -30,6 +30,7 @@ import Parser.Advanced
 import Regex exposing (Regex)
 import Rfc3339
 import Theme
+import Url
 
 
 type Type
@@ -552,6 +553,14 @@ matchesString { pattern, const, format } s =
                             Ok ()
 
                         Err _ ->
+                            Err (DoesNotMatchFormat f)
+
+                "uri" ->
+                    case Url.fromString s of
+                        Just _ ->
+                            Ok ()
+
+                        Nothing ->
                             Err (DoesNotMatchFormat f)
 
                 _ ->

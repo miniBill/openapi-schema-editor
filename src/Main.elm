@@ -3,6 +3,7 @@ module Main exposing (main)
 import Browser
 import Cmd.Extra exposing (add)
 import Dict exposing (Dict)
+import Dict.Extra
 import Html exposing (Html, br, button, div, i, main_, p, pre, select, text, textarea)
 import Html.Attributes exposing (checked, rows, style, type_, value)
 import Html.Events exposing (onCheck, onClick, onInput)
@@ -316,7 +317,7 @@ findProblems maybeType js =
                 --                 Just
                 --                     (TOneOf
                 --                         (alternatives
-                --                             ++ [ suggestType j ]
+                --                             ++ [ Type.suggest j ]
                 --                         )
                 --                     )
                 --         Just _ ->
@@ -382,7 +383,7 @@ findProblems maybeType js =
                                         | fields =
                                             data.fields
                                                 ++ [ ( fieldName
-                                                     , { type_ = suggestType found
+                                                     , { type_ = Type.suggest found
                                                        , required = True
                                                        , nullable = False
                                                        }
@@ -402,14 +403,14 @@ findProblems maybeType js =
                                                     (\( name, _ ) -> name == fieldName)
                                                     (\( name, field ) ->
                                                         ( name
-                                                        , { field | type_ = suggestType found }
+                                                        , { field | type_ = Type.suggest found }
                                                         )
                                                     )
                                     }
                                 )
 
                 _ ->
-                    mismatch Nothing (suggestType jsHead)
+                    mismatch Nothing (Type.suggest jsHead)
 
 
 cut : Json -> Json
@@ -426,72 +427,6 @@ cut j =
 
         _ ->
             j
-
-
-suggestType : Json -> Type
-suggestType j =
-    case j of
-        List [] ->
-            TList TNull
-
-        List (h :: t) ->
-            t
-                |> List.foldl
-                    (\e a -> Type.union (suggestType e) a)
-                    (suggestType h)
-                |> TList
-
-        Int _ ->
-            TInteger
-
-        Float _ ->
-            TNumber
-
-        String s ->
-            case Parser.Advanced.run Rfc3339.dateTimeOffsetParser s of
-                Ok _ ->
-                    TString { pattern = Nothing, const = Nothing, format = Just "date-time" }
-
-                Err _ ->
-                    case Url.fromString s of
-                        Just _ ->
-                            TString { pattern = Nothing, const = Nothing, format = Just "uri" }
-
-                        Nothing ->
-                            TString { pattern = Nothing, const = Nothing, format = Nothing }
-
-        Bool _ ->
-            TBoolean
-
-        Null ->
-            TNull
-
-        Object fields ->
-            TObject
-                { fields =
-                    fields
-                        |> Dict.toList
-                        |> List.map
-                            (\( fieldName, fieldValue ) ->
-                                case ( fieldName, fieldValue ) of
-                                    ( "type", String s ) ->
-                                        ( fieldName
-                                        , { type_ = TString { format = Nothing, pattern = Nothing, const = Just s }
-                                          , required = True
-                                          , nullable = False
-                                          }
-                                        )
-
-                                    _ ->
-                                        ( fieldName
-                                        , { type_ = suggestType fieldValue
-                                          , required = True
-                                          , nullable = False
-                                          }
-                                        )
-                            )
-                , additionalProperties = AdditionalPropertiesNotAllowed
-                }
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )

@@ -15,19 +15,23 @@ module Type exposing
     , matchesString
     , objectEditor
     , stringEditor
+    , suggest
     , toString
     , union
     )
 
 import Dict exposing (Dict)
+import Dict.Extra
 import Html exposing (Html)
 import Html.Attributes
 import Html.Events
 import Json exposing (Json(..))
 import Json.Encode
 import List.Extra
+import Maybe.Extra
 import Parser.Advanced
 import Regex exposing (Regex)
+import Result.Extra
 import Rfc3339
 import Theme
 import Url
@@ -546,28 +550,27 @@ matchesString { pattern, const, format } s =
                 Err DoesNotMatchPattern
 
         ( Nothing, Nothing, Just f ) ->
-            case f of
-                "date-time" ->
-                    case Parser.Advanced.run Rfc3339.dateTimeOffsetParser s of
-                        Ok _ ->
-                            Ok ()
+            case Dict.get f formats of
+                Just isMatch ->
+                    if isMatch s then
+                        Ok ()
 
-                        Err _ ->
-                            Err (DoesNotMatchFormat f)
+                    else
+                        Err (DoesNotMatchFormat f)
 
-                "uri" ->
-                    case Url.fromString s of
-                        Just _ ->
-                            Ok ()
-
-                        Nothing ->
-                            Err (DoesNotMatchFormat f)
-
-                _ ->
+                Nothing ->
                     Err (UnknownFormat f)
 
         ( Nothing, Nothing, Nothing ) ->
             Ok ()
+
+
+formats : Dict String (String -> Bool)
+formats =
+    [ ( "date-time", \s -> Parser.Advanced.run Rfc3339.dateTimeOffsetParser s |> Result.Extra.isOk )
+    , ( "uri", \s -> Url.fromString s |> Maybe.Extra.isJust )
+    ]
+        |> Dict.fromList
 
 
 type ObjectMatchProblem
@@ -612,3 +615,64 @@ matchesObject { fields, additionalProperties } v =
                                 else
                                     [ WrongFieldType fieldName { expected = additionalType, found = fieldValue } ]
             )
+
+
+suggest : Json -> Type
+suggest j =
+    case j of
+        List [] ->
+            TList TNull
+
+        List (h :: t) ->
+            t
+                |> List.foldl
+                    (\e a -> union (suggest e) a)
+                    (suggest h)
+                |> TList
+
+        Int _ ->
+            TInteger
+
+        Float _ ->
+            TNumber
+
+        String s ->
+            case Dict.Extra.find (\_ isMatch -> isMatch s) formats of
+                Just ( formatName, _ ) ->
+                    TString { pattern = Nothing, const = Nothing, format = Just formatName }
+
+                Nothing ->
+                    TString { pattern = Nothing, const = Nothing, format = Nothing }
+
+        Bool _ ->
+            TBoolean
+
+        Null ->
+            TNull
+
+        Object fields ->
+            TObject
+                { fields =
+                    fields
+                        |> Dict.toList
+                        |> List.map
+                            (\( fieldName, fieldValue ) ->
+                                case ( fieldName, fieldValue ) of
+                                    ( "type", String s ) ->
+                                        ( fieldName
+                                        , { type_ = TString { format = Nothing, pattern = Nothing, const = Just s }
+                                          , required = True
+                                          , nullable = False
+                                          }
+                                        )
+
+                                    _ ->
+                                        ( fieldName
+                                        , { type_ = suggest fieldValue
+                                          , required = True
+                                          , nullable = False
+                                          }
+                                        )
+                            )
+                , additionalProperties = AdditionalPropertiesNotAllowed
+                }

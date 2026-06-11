@@ -229,7 +229,43 @@ buildDict seen types typeName value acc =
                                 go c child innerAcc
 
                             Nothing ->
-                                List.foldl (\opt a -> go opt child a) innerAcc opts
+                                let
+                                    specific : Maybe Type
+                                    specific =
+                                        case child of
+                                            Object fs ->
+                                                case Dict.get "type" fs of
+                                                    Just (String type_) ->
+                                                        List.Extra.find
+                                                            (\opt ->
+                                                                case opt of
+                                                                    TObject { fields } ->
+                                                                        List.member
+                                                                            ( "type"
+                                                                            , { nullable = False
+                                                                              , required = True
+                                                                              , type_ = TString { const = Just type_, pattern = Nothing, format = Nothing }
+                                                                              }
+                                                                            )
+                                                                            fields
+
+                                                                    _ ->
+                                                                        False
+                                                            )
+                                                            opts
+
+                                                    _ ->
+                                                        Nothing
+
+                                            _ ->
+                                                Nothing
+                                in
+                                case specific of
+                                    Just s ->
+                                        go s child innerAcc
+
+                                    Nothing ->
+                                        List.foldl (\opt a -> go opt child a) innerAcc opts
 
                     ( TRef ref, _ ) ->
                         buildDict (Set.insert typeName seen) types ref child innerAcc

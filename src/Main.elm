@@ -42,6 +42,7 @@ type Msg
     | SelectedFile File
     | ReadFile String
     | SelectType String
+    | SortFields
 
 
 main : Program () Model Msg
@@ -89,6 +90,11 @@ view model =
                 [ onClick Load
                 ]
                 [ text "Load" ]
+            , text " "
+            , button
+                [ onClick SortFields
+                ]
+                [ text "SortFields" ]
             ]
         , textarea
             [ value model.input
@@ -657,6 +663,58 @@ update msg model =
 
         SelectType name ->
             ( { model | selectedType = name }, Cmd.none )
+
+        SortFields ->
+            ( { model | types = Dict.map (\_ t -> sortFields t) model.types }, Cmd.none )
+
+
+sortFields : Type -> Type
+sortFields t =
+    case t of
+        TOneOf alts ->
+            alts
+                |> List.map sortFields
+                |> List.sortBy
+                    (\c ->
+                        case c of
+                            TRef f ->
+                                f
+
+                            _ ->
+                                ""
+                    )
+                |> TOneOf
+
+        TList child ->
+            TList (sortFields child)
+
+        TObject obj ->
+            TObject
+                { fields =
+                    List.sortBy
+                        (\( fieldName, _ ) ->
+                            case fieldName of
+                                "id" ->
+                                    ( 0, fieldName )
+
+                                "type" ->
+                                    ( 1, fieldName )
+
+                                "attributes" ->
+                                    ( 2, fieldName )
+
+                                _ ->
+                                    ( 99, fieldName )
+                        )
+                        obj.fields
+                , additionalProperties = obj.additionalProperties
+                }
+
+        TEnum alts ->
+            TEnum (List.sort alts)
+
+        _ ->
+            t
 
 
 typesCodec : Codec (Dict String Type)

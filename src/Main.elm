@@ -437,7 +437,7 @@ findProblemsForType types maybeType js =
                         ]
                         children
 
-                mismatch : Maybe String -> Type -> List (Html Type)
+                mismatch : Maybe String -> Maybe Type -> List (Html Type)
                 mismatch problem suggested =
                     [ div
                         [ style "padding" "2px"
@@ -458,17 +458,26 @@ findProblemsForType types maybeType js =
 
                             Nothing ->
                                 paragraph [ text "Unknown type" ]
-                        , paragraph
-                            [ text "Suggested ", text (String.Extra.ellipsis 500 (Type.toString suggested)) ]
-                        , button [ onClick suggested ]
-                            [ text "Use suggested instead" ]
+                        , case suggested of
+                            Nothing ->
+                                text ""
+
+                            Just s ->
+                                paragraph
+                                    [ text "Suggested ", text (String.Extra.ellipsis 500 (Type.toString s)) ]
+                        , case suggested of
+                            Nothing ->
+                                text ""
+
+                            Just s ->
+                                button [ onClick s ]
+                                    [ text "Use suggested instead" ]
                         , paragraph
                             [ text "Got "
                             , jsHead
                                 |> cut
                                 |> Json.encode
                                 |> Json.Encode.encode 2
-                                |> String.Extra.ellipsis 1000
                                 |> text
                             ]
                         ]
@@ -481,11 +490,13 @@ findProblemsForType types maybeType js =
                             findProblemsForType types (Just s) [ jsHead ]
 
                         Nothing ->
-                            mismatch Nothing <|
-                                TOneOf
+                            mismatch Nothing
+                                (TOneOf
                                     (alternatives
                                         ++ [ Type.suggest jsHead ]
                                     )
+                                    |> Just
+                                )
 
                 -- ( TList tchild, List children ) ->
                 --     children
@@ -555,6 +566,7 @@ findProblemsForType types maybeType js =
                                                      )
                                                    ]
                                     }
+                                    |> Just
                                 )
 
                         (Type.WrongFieldType fieldName { found }) :: _ ->
@@ -572,10 +584,14 @@ findProblemsForType types maybeType js =
                                                         )
                                                     )
                                     }
+                                    |> Just
                                 )
 
+                        (Type.MissingField fieldName) :: _ ->
+                            mismatch (Just ("Missing field " ++ fieldName)) Nothing
+
                 _ ->
-                    mismatch Nothing (Type.suggest jsHead)
+                    mismatch Nothing (Just (Type.suggest jsHead))
 
 
 cut : Json -> Json

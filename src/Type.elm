@@ -720,6 +720,7 @@ formats =
 type ObjectMatchProblem
     = UnexpectedField String { found : Json }
     | WrongFieldType String { expected : Type, found : Json }
+    | MissingField String
 
 
 matchesObject : Dict String Type -> ObjectData -> Dict String Json -> List ObjectMatchProblem
@@ -728,37 +729,54 @@ matchesObject types { fields, additionalProperties } v =
         fieldsDict : Dict String Field
         fieldsDict =
             Dict.fromList fields
-    in
-    v
-        |> Dict.toList
-        |> List.concatMap
-            (\( fieldName, fieldValue ) ->
-                case Dict.get fieldName fieldsDict of
-                    Just field ->
-                        if isValidFor types field.type_ fieldValue then
+
+        wrongFields : List ObjectMatchProblem
+        wrongFields =
+            v
+                |> Dict.toList
+                |> List.concatMap checkExistingField
+
+        checkExistingField : ( String, Json ) -> List ObjectMatchProblem
+        checkExistingField ( fieldName, fieldValue ) =
+            case Dict.get fieldName fieldsDict of
+                Just field ->
+                    if isValidFor types field.type_ fieldValue then
+                        []
+
+                    else if fieldValue == Null && field.nullable then
+                        []
+
+                    else
+                        [ WrongFieldType fieldName { expected = field.type_, found = fieldValue } ]
+
+                Nothing ->
+                    case additionalProperties of
+                        AdditionalPropertiesNotAllowed ->
+                            [ UnexpectedField fieldName { found = fieldValue } ]
+
+                        AdditionalPropertiesAllowed Nothing ->
                             []
 
-                        else if fieldValue == Null && field.nullable then
-                            []
-
-                        else
-                            [ WrongFieldType fieldName { expected = field.type_, found = fieldValue } ]
-
-                    Nothing ->
-                        case additionalProperties of
-                            AdditionalPropertiesNotAllowed ->
-                                [ UnexpectedField fieldName { found = fieldValue } ]
-
-                            AdditionalPropertiesAllowed Nothing ->
+                        AdditionalPropertiesAllowed (Just additionalType) ->
+                            if isValidFor types additionalType fieldValue then
                                 []
 
-                            AdditionalPropertiesAllowed (Just additionalType) ->
-                                if isValidFor types additionalType fieldValue then
-                                    []
+                            else
+                                [ WrongFieldType fieldName { expected = additionalType, found = fieldValue } ]
 
-                                else
-                                    [ WrongFieldType fieldName { expected = additionalType, found = fieldValue } ]
-            )
+        missingFields : List ObjectMatchProblem
+        missingFields =
+            fields
+                |> List.filterMap
+                    (\( fieldName, field ) ->
+                        if not field.required || Dict.member fieldName v then
+                            Nothing
+
+                        else
+                            Just (MissingField fieldName)
+                    )
+    in
+    wrongFields ++ missingFields
 
 
 suggest : Json -> Type

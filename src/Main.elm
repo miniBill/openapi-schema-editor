@@ -302,7 +302,7 @@ findProblems maybeType js =
                             , jsHead
                                 |> cut
                                 |> Json.encode
-                                |> Json.Encode.encode 0
+                                |> Json.Encode.encode 2
                                 |> String.Extra.ellipsis 1000
                                 |> text
                             ]

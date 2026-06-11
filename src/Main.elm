@@ -627,6 +627,12 @@ update msg model =
                             model.types
                                 |> Dict.remove old
                                 |> Dict.insert new t
+                        , selectedType =
+                            if model.selectedType == old then
+                                new
+
+                            else
+                                model.selectedType
                       }
                     , Cmd.none
                     )

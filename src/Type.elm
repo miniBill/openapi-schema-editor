@@ -43,6 +43,7 @@ type Type
     | TObject ObjectData
     | TOneOf (List Type)
     | TRef String
+    | TEnum (List String)
 
 
 type alias StringData =
@@ -100,6 +101,9 @@ toShortString t =
         TRef _ ->
             "$ref"
 
+        TEnum _ ->
+            "enum"
+
 
 toString : Type -> String
 toString t =
@@ -145,10 +149,17 @@ toString t =
             "null"
 
         TOneOf alt ->
-            alt |> List.map toString |> String.join " | "
+            alt
+                |> List.map toString
+                |> String.join " | "
 
         TRef name ->
             "$ref: " ++ name
+
+        TEnum options ->
+            options
+                |> List.map escape
+                |> String.join " | "
 
 
 escape : String -> String
@@ -239,11 +250,10 @@ editor typeNames t =
                             )
                         ]
                         [ Html.text "➕ New alternative" ]
-                    , (children
+                    , children
                         |> List.indexedMap
                             (\i child ->
-                                [ Html.div [] []
-                                , editor typeNames child
+                                [ editor typeNames child
                                     |> Html.map
                                         (\newChild ->
                                             TOneOf (List.Extra.setAt i newChild children)
@@ -254,11 +264,45 @@ editor typeNames t =
                                 ]
                             )
                         |> List.concat
-                      )
                         |> Html.div
                             [ Html.Attributes.style "display" "grid"
                             , Html.Attributes.style "gap" "4px"
-                            , Html.Attributes.style "grid-template-columns" "4px auto auto"
+                            , Html.Attributes.style "grid-template-columns" "auto auto"
+                            ]
+                        |> List.singleton
+                    )
+
+                TEnum children ->
+                    ( { default | enum = children }
+                    , Html.button
+                        [ Html.Attributes.style "grid-column" "1 / span 3"
+                        , Html.Events.onClick
+                            (TEnum
+                                (children ++ [ "" ])
+                            )
+                        ]
+                        [ Html.text "➕ New option" ]
+                    , children
+                        |> List.indexedMap
+                            (\i child ->
+                                [ Html.input
+                                    [ Html.Events.onInput
+                                        (\newChild ->
+                                            TEnum (List.Extra.setAt i newChild children)
+                                        )
+                                    , Html.Attributes.value child
+                                    ]
+                                    []
+                                , Html.button
+                                    [ Html.Events.onClick (TEnum (List.Extra.removeAt i children)) ]
+                                    [ Html.text "🗑️" ]
+                                ]
+                            )
+                        |> List.concat
+                        |> Html.div
+                            [ Html.Attributes.style "display" "grid"
+                            , Html.Attributes.style "gap" "4px"
+                            , Html.Attributes.style "grid-template-columns" "auto auto"
                             ]
                         |> List.singleton
                     )
@@ -290,6 +334,7 @@ editor typeNames t =
                  , TBoolean
                  , TNull
                  , TRef (Maybe.withDefault "" extracted.ref)
+                 , TEnum extracted.enum
                  ]
                     |> List.map (\k -> ( toShortString k, k ))
                 )
@@ -358,6 +403,7 @@ type alias Extracted =
     , string : Maybe StringData
     , oneOf : List Type
     , ref : Maybe String
+    , enum : List String
     }
 
 
@@ -368,6 +414,7 @@ defaultExtracted t =
     , string = Nothing
     , oneOf = [ t ]
     , ref = Nothing
+    , enum = []
     }
 
 
@@ -508,17 +555,26 @@ union l r =
 
 isValidFor : Type -> Json -> Bool
 isValidFor t j =
-    case ( j, t ) of
-        ( Int _, TInteger ) ->
+    case ( t, j ) of
+        ( TInteger, Int _ ) ->
             True
 
-        ( List children, TList c ) ->
+        ( TInteger, _ ) ->
+            False
+
+        ( TList c, List children ) ->
             List.all (\child -> isValidFor c child) children
 
-        ( Float _, TNumber ) ->
+        ( TList _, _ ) ->
+            False
+
+        ( TNumber, Float _ ) ->
             True
 
-        ( String s, TString str ) ->
+        ( TNumber, _ ) ->
+            False
+
+        ( TString str, String s ) ->
             case matchesString str s of
                 Ok () ->
                     True
@@ -526,19 +582,37 @@ isValidFor t j =
                 Err _ ->
                     False
 
-        ( Bool _, TBoolean ) ->
+        ( TString _, _ ) ->
+            False
+
+        ( TBoolean, Bool _ ) ->
             True
 
-        ( Null, TNull ) ->
+        ( TBoolean, _ ) ->
+            False
+
+        ( TNull, Null ) ->
             True
 
-        ( Object o, TObject obj ) ->
+        ( TNull, _ ) ->
+            False
+
+        ( TObject obj, Object o ) ->
             List.isEmpty (matchesObject obj o)
 
-        ( _, TRef _ ) ->
+        ( TObject _, _ ) ->
+            False
+
+        ( TRef _, _ ) ->
             True
 
-        _ ->
+        ( TOneOf opts, _ ) ->
+            List.any (\opt -> isValidFor opt j) opts
+
+        ( TEnum opts, String s ) ->
+            List.member s opts
+
+        ( TEnum _, _ ) ->
             False
 
 
@@ -707,7 +781,7 @@ codec =
     Codec.recursive
         (\go ->
             Codec.custom
-                (\vList vString vInteger vNumber vBoolean vNull vObject vOneOf vRef value ->
+                (\vList vString vInteger vNumber vBoolean vNull vObject vOneOf vRef vEnum value ->
                     case value of
                         TList c ->
                             vList c
@@ -735,6 +809,9 @@ codec =
 
                         TRef c ->
                             vRef c
+
+                        TEnum c ->
+                            vEnum c
                 )
                 |> Codec.variant1 "TList" TList go
                 |> Codec.variant1 "TString" TString stringDataCodec
@@ -745,6 +822,7 @@ codec =
                 |> Codec.variant1 "TObject" TObject objectDataCodec
                 |> Codec.variant1 "TOneOf" TOneOf (Codec.list go)
                 |> Codec.variant1 "TRef" TRef Codec.string
+                |> Codec.variant1 "TEnum" TEnum (Codec.list Codec.string)
                 |> Codec.buildCustom
         )
 

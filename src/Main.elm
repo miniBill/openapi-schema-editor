@@ -141,7 +141,7 @@ viewMatches types j =
     let
         dict : Dict String ( Type, List Json )
         dict =
-            buildDict types "" j Dict.empty
+            buildDict Set.empty types "" j Dict.empty
     in
     dict
         |> Dict.toList
@@ -174,68 +174,72 @@ viewMatches types j =
             ]
 
 
-buildDict : Dict String Type -> String -> Json -> Dict String ( Type, List Json ) -> Dict String ( Type, List Json )
-buildDict types typeName value acc =
-    let
-        ( type_, updated ) =
-            case Dict.get typeName acc of
-                Nothing ->
-                    case Dict.get typeName types of
-                        Nothing ->
-                            let
-                                _ =
-                                    Debug.log "Type not found" typeName
+buildDict : Set String -> Dict String Type -> String -> Json -> Dict String ( Type, List Json ) -> Dict String ( Type, List Json )
+buildDict seen types typeName value acc =
+    if Set.member typeName seen then
+        acc
 
-                                _ =
-                                    Debug.log "Available" (Dict.keys acc)
-                            in
-                            ( TNull, Dict.insert typeName ( TNull, [ value ] ) acc )
+    else
+        let
+            ( type_, updated ) =
+                case Dict.get typeName acc of
+                    Nothing ->
+                        case Dict.get typeName types of
+                            Nothing ->
+                                let
+                                    _ =
+                                        Debug.log "Type not found" typeName
 
-                        Just t ->
-                            ( t, Dict.insert typeName ( t, [ value ] ) acc )
+                                    _ =
+                                        Debug.log "Available" (Dict.keys acc)
+                                in
+                                ( TNull, Dict.insert typeName ( TNull, [ value ] ) acc )
 
-                Just ( t, list ) ->
-                    ( t
-                    , Dict.insert typeName
+                            Just t ->
+                                ( t, Dict.insert typeName ( t, [ value ] ) acc )
+
+                    Just ( t, list ) ->
                         ( t
-                        , if List.member value list then
-                            list
+                        , Dict.insert typeName
+                            ( t
+                            , if List.member value list then
+                                list
 
-                          else
-                            value :: list
+                              else
+                                value :: list
+                            )
+                            acc
                         )
-                        acc
-                    )
 
-        go t child innerAcc =
-            case ( t, child ) of
-                ( TList c, List children ) ->
-                    List.foldl (go c) innerAcc children
+            go t child innerAcc =
+                case ( t, child ) of
+                    ( TList c, List children ) ->
+                        List.foldl (go c) innerAcc children
 
-                ( TObject { fields }, Object fs ) ->
-                    Dict.merge
-                        (\_ _ a -> a)
-                        (\fieldName field fieldValue a -> go field.type_ fieldValue a)
-                        (\_ _ a -> a)
-                        (Dict.fromList fields)
-                        fs
+                    ( TObject { fields }, Object fs ) ->
+                        Dict.merge
+                            (\_ _ a -> a)
+                            (\fieldName field fieldValue a -> go field.type_ fieldValue a)
+                            (\_ _ a -> a)
+                            (Dict.fromList fields)
+                            fs
+                            innerAcc
+
+                    ( TOneOf opts, _ ) ->
+                        case List.Extra.find (\opt -> Type.isValidFor opt child) opts of
+                            Just c ->
+                                go c child innerAcc
+
+                            Nothing ->
+                                List.foldl (\opt a -> go opt child a) innerAcc opts
+
+                    ( TRef ref, _ ) ->
+                        buildDict (Set.insert typeName seen) types ref child innerAcc
+
+                    _ ->
                         innerAcc
-
-                ( TOneOf opts, _ ) ->
-                    case List.Extra.find (\opt -> Type.isValidFor opt child) opts of
-                        Just c ->
-                            go c child innerAcc
-
-                        Nothing ->
-                            List.foldl (\opt a -> go opt child a) innerAcc opts
-
-                ( TRef ref, _ ) ->
-                    buildDict types ref child innerAcc
-
-                _ ->
-                    innerAcc
-    in
-    go type_ value updated
+        in
+        go type_ value updated
 
 
 findProblems : Type -> List Json -> List (Html Type)

@@ -1,5 +1,5 @@
 module Type exposing
-    ( AdditionalProperties
+    ( AdditionalProperties(..)
     , Extracted
     , Field
     , ObjectData

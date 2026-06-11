@@ -19,7 +19,7 @@ import List.Extra
 import Set exposing (Set)
 import String.Extra
 import Task
-import Type exposing (Type(..))
+import Type exposing (AdditionalProperties(..), Type(..))
 
 
 type alias Model =
@@ -666,6 +666,7 @@ update msg model =
                             model.types
                                 |> Dict.remove old
                                 |> Dict.insert new t
+                                |> Dict.map (\_ -> renameTypeRefs old new)
                         , selectedType =
                             if model.selectedType == old then
                                 new
@@ -720,6 +721,51 @@ update msg model =
             ( { model | types = Dict.map (\_ t -> sortFields t) model.types }, Cmd.none )
 
 
+renameTypeRefs : String -> String -> Type -> Type
+renameTypeRefs old new t =
+    case t of
+        TRef n ->
+            if n == old then
+                TRef new
+
+            else
+                t
+
+        TList c ->
+            TList (renameTypeRefs old new c)
+
+        TObject obj ->
+            TObject
+                { obj
+                    | fields =
+                        List.map
+                            (\( fieldName, field ) ->
+                                ( fieldName
+                                , { field | type_ = renameTypeRefs old new field.type_ }
+                                )
+                            )
+                            obj.fields
+                    , additionalProperties =
+                        case obj.additionalProperties of
+                            AdditionalPropertiesAllowed (Just c) ->
+                                AdditionalPropertiesAllowed (Just (renameTypeRefs old new c))
+
+                            AdditionalPropertiesNotAllowed ->
+                                obj.additionalProperties
+
+                            AdditionalPropertiesAllowed Nothing ->
+                                obj.additionalProperties
+                }
+
+        TOneOf alts ->
+            alts
+                |> List.map (renameTypeRefs old new)
+                |> TOneOf
+
+        _ ->
+            t
+
+
 sortFields : Type -> Type
 sortFields t =
     case t of
@@ -759,7 +805,16 @@ sortFields t =
                                     ( 99, fieldName )
                         )
                         obj.fields
-                , additionalProperties = obj.additionalProperties
+                , additionalProperties =
+                    case obj.additionalProperties of
+                        AdditionalPropertiesAllowed (Just c) ->
+                            AdditionalPropertiesAllowed (Just (sortFields c))
+
+                        AdditionalPropertiesNotAllowed ->
+                            obj.additionalProperties
+
+                        AdditionalPropertiesAllowed Nothing ->
+                            obj.additionalProperties
                 }
 
         TEnum alts ->

@@ -2,7 +2,9 @@ module Main exposing (main)
 
 import Browser
 import Codec exposing (Codec)
+import Color.Oklch as Oklch
 import Dict exposing (Dict)
+import Dict.Extra
 import File exposing (File)
 import File.Download
 import File.Select
@@ -39,6 +41,7 @@ type Msg
     | Load
     | SelectedFile File
     | ReadFile String
+    | SelectType String
 
 
 main : Program () Model Msg
@@ -95,17 +98,100 @@ view model =
             , style "overflow-y" "scroll"
             ]
             []
-        , div
-            []
-            [ div
-                [ style "display" "grid"
-                , style "grid-template-columns" "auto 1fr auto"
-                , style "align-self" "start"
-                , style "gap" "4px"
-                ]
-                (viewTypes model.types)
+        , let
+            problems : Dict String (List (Html Msg))
+            problems =
+                case model.json of
+                    Ok j ->
+                        findProblems model.types j
+
+                    Err _ ->
+                        Dict.empty
+          in
+          div
+            [ style "display" "flex"
+            , style "flex-direction" "column"
+            , style "gap" "4px"
+            ]
+            (viewTabs (Dict.keys model.types) model.selectedType problems
+                :: viewCurrentTab model problems
+            )
+        ]
+
+
+viewTabs : List String -> String -> Dict String problems -> Html Msg
+viewTabs tabs selected problems =
+    div
+        [ style "display" "flex"
+        , style "flex-wrap" "wrap"
+        , style "gap" "4px"
+        ]
+        (List.map (\tab -> viewTab tab (tab == selected) (Dict.member tab problems)) tabs
+            ++ [ button
+                    [ onClick AddType
+                    , style "grid-column" "1 / span 3"
+                    ]
+                    [ text "➕ New type" ]
+               ]
+        )
+
+
+viewTab : String -> Bool -> Bool -> Html Msg
+viewTab name selected hasProblems =
+    button
+        [ style "border" "1px solid black"
+        , style "padding" "8px"
+        , style
+            "background-color"
+            (Oklch.toCssString
+                (Oklch.oklch
+                    (if selected then
+                        0.8
+
+                     else
+                        0.95
+                    )
+                    (if hasProblems then
+                        0.25
+
+                     else
+                        0
+                    )
+                    (29.23 / 360)
+                )
+            )
+        , style "cursor" "pointer"
+        , onClick (SelectType name)
+        ]
+        [ if String.isEmpty name then
+            text "<root>"
+
+          else
+            text name
+        , text " "
+        , if String.isEmpty name then
+            Html.text ""
+
+          else
+            button [ onClick (RemoveType name) ] [ text "🗑️" ]
+        ]
+
+
+viewCurrentTab : Model -> Dict String (List (Html Msg)) -> List (Html Msg)
+viewCurrentTab model problems =
+    case Dict.get model.selectedType model.types of
+        Nothing ->
+            [ Html.text "Not defined" ]
+
+        Just type_ ->
+            [ if String.isEmpty model.selectedType then
+                p [] [ text "" ]
+
+              else
+                Html.input [ onInput (RenameType model.selectedType), value model.selectedType ] []
+            , Html.map (Type model.selectedType) (Type.editor (Dict.keys model.types) type_)
             , div []
-                [ case model.json of
+                (case model.json of
                     Err e ->
                         e
                             |> Json.Decode.errorToString
@@ -116,86 +202,30 @@ view model =
                                         [ style "font-family" "monospace" ]
                                         [ text line ]
                                 )
-                            |> div []
 
                     Ok json ->
-                        viewMatches model.types json
-                ]
+                        Dict.get model.selectedType problems
+                            |> Maybe.withDefault []
+                )
             ]
-        ]
 
 
-viewTypes : Dict String Type -> List (Html Msg)
-viewTypes types =
-    let
-        typeNames : List String
-        typeNames =
-            Dict.keys types
-    in
-    button
-        [ onClick AddType
-        , style "grid-column" "1 / span 3"
-        ]
-        [ text "➕ New type" ]
-        :: (types
-                |> Dict.update "" (Maybe.withDefault TNull >> Just)
-                |> Dict.toList
-                |> List.concatMap (viewType typeNames)
-           )
-
-
-viewType : List String -> ( String, Type ) -> List (Html Msg)
-viewType typeNames ( name, type_ ) =
-    [ if String.isEmpty name then
-        p [] [ text "<root>" ]
-
-      else
-        Html.input [ onInput (RenameType name), value name ] []
-    , Html.map (Type name) (Type.editor typeNames type_)
-    , if String.isEmpty name then
-        div [] []
-
-      else
-        button [ onClick (RemoveType name) ] [ text "🗑️" ]
-    ]
-
-
-viewMatches : Dict String Type -> Json -> Html Msg
-viewMatches types j =
-    let
-        dict : Dict String ( Maybe Type, List Json )
-        dict =
-            buildDict Set.empty types "" j Dict.empty
-    in
-    dict
-        |> Dict.toList
-        |> List.concatMap
-            (\( typeName, ( type_, values ) ) ->
+findProblems : Dict String Type -> Json -> Dict String (List (Html Msg))
+findProblems types j =
+    buildDict Set.empty types "" j Dict.empty
+        |> Dict.Extra.filterMap
+            (\name ( type_, values ) ->
                 let
                     problems : List (Html Type)
                     problems =
-                        findProblems type_ values
+                        findProblemsForType type_ values
                 in
                 if List.isEmpty problems then
-                    []
+                    Nothing
 
                 else
-                    [ div []
-                        [ if String.isEmpty typeName then
-                            text "<root>"
-
-                          else
-                            text typeName
-                        ]
-                    , div [] problems
-                        |> Html.map (Type typeName)
-                    ]
+                    Just (problems |> List.map (Html.map (Type name)))
             )
-        |> div
-            [ style "display" "grid"
-            , style "gap" "4px"
-            , style "grid-template-columns" "auto 1fr"
-            ]
 
 
 buildDict : Set String -> Dict String Type -> String -> Json -> Dict String ( Maybe Type, List Json ) -> Dict String ( Maybe Type, List Json )
@@ -335,8 +365,8 @@ buildDict seen types typeName value acc =
                 go t value updated
 
 
-findProblems : Maybe Type -> List Json -> List (Html Type)
-findProblems maybeType js =
+findProblemsForType : Maybe Type -> List Json -> List (Html Type)
+findProblemsForType maybeType js =
     let
         nonMatching : List Json
         nonMatching =
@@ -616,6 +646,9 @@ update msg model =
 
                 Ok types ->
                     ( { model | types = types }, Cmd.none )
+
+        SelectType name ->
+            ( { model | selectedType = name }, Cmd.none )
 
 
 typesCodec : Codec (Dict String Type)

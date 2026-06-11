@@ -1,4 +1,23 @@
-module Type exposing (..)
+module Type exposing
+    ( AdditionalProperties(..)
+    , Extracted
+    , Field
+    , ObjectData
+    , ObjectMatchProblem(..)
+    , StringData
+    , StringMatchProblem(..)
+    , Type(..)
+    , defaultExtracted
+    , editor
+    , emptyObject
+    , isValidFor
+    , matchesObject
+    , matchesString
+    , objectEditor
+    , stringEditor
+    , toString
+    , union
+    )
 
 import Dict exposing (Dict)
 import Html exposing (Html)
@@ -52,11 +71,15 @@ type AdditionalProperties
 toString : Type -> String
 toString t =
     case t of
-        TObject _ ->
-            "object"
+        TObject data ->
+            if List.isEmpty data.fields then
+                "{}"
 
-        TList _ ->
-            "list"
+            else
+                "{ " ++ String.join ", " (List.map fieldToString data.fields) ++ " }"
+
+        TList child ->
+            toString child ++ "[]"
 
         TString _ ->
             "string"
@@ -73,11 +96,27 @@ toString t =
         TNull ->
             "null"
 
-        TOneOf _ ->
-            "oneOf"
+        TOneOf alt ->
+            alt |> List.map toString |> String.join " | "
 
         TRef name ->
             "$ref: " ++ name
+
+
+fieldToString : ( String, Field ) -> String
+fieldToString ( fieldName, field ) =
+    case ( field.required, field.nullable ) of
+        ( True, False ) ->
+            fieldName ++ ": " ++ toString field.type_
+
+        ( False, False ) ->
+            fieldName ++ "?: " ++ toString field.type_
+
+        ( True, True ) ->
+            fieldName ++ ": " ++ toString field.type_ ++ "?"
+
+        ( False, True ) ->
+            fieldName ++ "?: " ++ toString field.type_ ++ "?"
 
 
 editor : Type -> Html Type
@@ -525,15 +564,9 @@ matchesString { pattern, const, format } s =
             Ok ()
 
 
-type alias ObjectMatchProblem =
-    { fieldName : String
-    , problem : FieldMatchProblem
-    }
-
-
-type FieldMatchProblem
-    = UnexpectedField
-    | WrongFieldType
+type ObjectMatchProblem
+    = UnexpectedField String { found : Json }
+    | WrongFieldType String { expected : Type, found : Json }
 
 
 matchesObject : ObjectData -> Dict String Json -> List ObjectMatchProblem
@@ -556,12 +589,12 @@ matchesObject { fields, additionalProperties } v =
                             []
 
                         else
-                            [ { fieldName = fieldName, problem = WrongFieldType } ]
+                            [ WrongFieldType fieldName { expected = field.type_, found = fieldValue } ]
 
                     Nothing ->
                         case additionalProperties of
                             AdditionalPropertiesNotAllowed ->
-                                [ { fieldName = fieldName, problem = UnexpectedField } ]
+                                [ UnexpectedField fieldName { found = fieldValue } ]
 
                             AdditionalPropertiesAllowed Nothing ->
                                 []
@@ -571,5 +604,5 @@ matchesObject { fields, additionalProperties } v =
                                     []
 
                                 else
-                                    [ { fieldName = fieldName, problem = WrongFieldType } ]
+                                    [ WrongFieldType fieldName { expected = additionalType, found = fieldValue } ]
             )

@@ -337,8 +337,7 @@ tryMatchOneOf types opts child =
 
                 _ ->
                     Nothing
-    in
-    let
+
         isGood : Type -> Bool
         isGood opt =
             case opt of
@@ -351,24 +350,22 @@ tryMatchOneOf types opts child =
                             isGood t
 
                 TObject { fields } ->
-                    Type.isValidFor opt child
-                        || (case childType of
-                                Just t ->
-                                    List.member
-                                        ( "type"
-                                        , { nullable = False
-                                          , required = True
-                                          , type_ = TString { const = Just t, pattern = Nothing, format = Nothing }
-                                          }
-                                        )
-                                        fields
+                    case childType of
+                        Just t ->
+                            List.member
+                                ( "type"
+                                , { nullable = False
+                                  , required = True
+                                  , type_ = TString { const = Just t, pattern = Nothing, format = Nothing }
+                                  }
+                                )
+                                fields
 
-                                Nothing ->
-                                    False
-                           )
+                        Nothing ->
+                            Type.isValidFor types opt child
 
                 _ ->
-                    Type.isValidFor opt child
+                    Type.isValidFor types opt child
     in
     List.Extra.find isGood opts
 
@@ -383,7 +380,7 @@ findProblemsForType types maybeType js =
                     js
 
                 Just t ->
-                    List.Extra.removeWhen (\j -> Type.isValidFor t j) js
+                    List.Extra.removeWhen (\j -> Type.isValidFor types t j) js
     in
     case nonMatching of
         [] ->
@@ -423,7 +420,7 @@ findProblemsForType types maybeType js =
                             Nothing ->
                                 paragraph [ text "Unknown type" ]
                         , paragraph
-                            [ text "Suggested ", text (String.Extra.ellipsis 300 (Type.toString suggested)) ]
+                            [ text "Suggested ", text (String.Extra.ellipsis 500 (Type.toString suggested)) ]
                         , button [ onClick suggested ]
                             [ text "Use suggested instead" ]
                         , paragraph
@@ -500,7 +497,7 @@ findProblemsForType types maybeType js =
                 -- ( TNull, Null ) ->
                 --     []
                 ( Just (TObject data), Object v ) ->
-                    case Type.matchesObject data v of
+                    case Type.matchesObject types data v of
                         [] ->
                             []
 

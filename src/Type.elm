@@ -595,8 +595,8 @@ union l r =
                 TOneOf [ l, r ]
 
 
-isValidFor : Type -> Json -> Bool
-isValidFor t j =
+isValidFor : Dict String Type -> Type -> Json -> Bool
+isValidFor types t j =
     case ( t, j ) of
         ( TInteger, Int _ ) ->
             True
@@ -605,7 +605,7 @@ isValidFor t j =
             False
 
         ( TList c, List children ) ->
-            List.all (\child -> isValidFor c child) children
+            List.all (\child -> isValidFor types c child) children
 
         ( TList _, _ ) ->
             False
@@ -640,16 +640,21 @@ isValidFor t j =
             False
 
         ( TObject obj, Object o ) ->
-            List.isEmpty (matchesObject obj o)
+            List.isEmpty (matchesObject types obj o)
 
         ( TObject _, _ ) ->
             False
 
-        ( TRef _, _ ) ->
-            True
+        ( TRef name, _ ) ->
+            case Dict.get name types of
+                Nothing ->
+                    False
+
+                Just child ->
+                    isValidFor types child j
 
         ( TOneOf opts, _ ) ->
-            List.any (\opt -> isValidFor opt j) opts
+            List.any (\opt -> isValidFor types opt j) opts
 
         ( TEnum opts, String s ) ->
             List.member s opts
@@ -717,8 +722,8 @@ type ObjectMatchProblem
     | WrongFieldType String { expected : Type, found : Json }
 
 
-matchesObject : ObjectData -> Dict String Json -> List ObjectMatchProblem
-matchesObject { fields, additionalProperties } v =
+matchesObject : Dict String Type -> ObjectData -> Dict String Json -> List ObjectMatchProblem
+matchesObject types { fields, additionalProperties } v =
     let
         fieldsDict : Dict String Field
         fieldsDict =
@@ -730,7 +735,7 @@ matchesObject { fields, additionalProperties } v =
             (\( fieldName, fieldValue ) ->
                 case Dict.get fieldName fieldsDict of
                     Just field ->
-                        if isValidFor field.type_ fieldValue then
+                        if isValidFor types field.type_ fieldValue then
                             []
 
                         else if fieldValue == Null && field.nullable then
@@ -748,7 +753,7 @@ matchesObject { fields, additionalProperties } v =
                                 []
 
                             AdditionalPropertiesAllowed (Just additionalType) ->
-                                if isValidFor additionalType fieldValue then
+                                if isValidFor types additionalType fieldValue then
                                     []
 
                                 else

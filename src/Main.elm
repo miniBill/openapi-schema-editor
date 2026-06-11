@@ -199,7 +199,7 @@ buildDict types typeName value acc =
                     )
 
         go t child innerAcc =
-            case ( t, value ) of
+            case ( t, child ) of
                 ( TList c, List children ) ->
                     List.foldl (go c) innerAcc children
 
@@ -213,15 +213,15 @@ buildDict types typeName value acc =
                         innerAcc
 
                 ( TOneOf opts, _ ) ->
-                    case List.Extra.find (\opt -> Type.isValidFor opt value) opts of
+                    case List.Extra.find (\opt -> Type.isValidFor opt child) opts of
                         Just c ->
-                            go c value innerAcc
+                            go c child innerAcc
 
                         Nothing ->
                             List.foldl (\opt a -> go opt child a) innerAcc opts
 
                 ( TRef ref, _ ) ->
-                    buildDict types ref value innerAcc
+                    buildDict types ref child innerAcc
 
                 _ ->
                     innerAcc

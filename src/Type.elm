@@ -68,6 +68,37 @@ type AdditionalProperties
     | AdditionalPropertiesNotAllowed
 
 
+toShortString : Type -> String
+toShortString t =
+    case t of
+        TObject data ->
+            "object"
+
+        TList child ->
+            "list"
+
+        TString _ ->
+            "string"
+
+        TInteger ->
+            "integer"
+
+        TNumber ->
+            "number"
+
+        TBoolean ->
+            "boolean"
+
+        TNull ->
+            "null"
+
+        TOneOf alt ->
+            "oneOf"
+
+        TRef name ->
+            "$ref: " ++ name
+
+
 toString : Type -> String
 toString t =
     case t of
@@ -212,7 +243,7 @@ editor t =
              , TNull
              , TRef (Maybe.withDefault "" extracted.ref)
              ]
-                |> List.map (\k -> ( toString k, k ))
+                |> List.map (\k -> ( toShortString k, k ))
             )
             t
             :: additional
@@ -393,18 +424,16 @@ objectEditor obj default =
 
         newFieldView : Html Type
         newFieldView =
-            Html.input
+            Html.button
                 [ Html.Attributes.style "grid-column" "1 / span 3"
-                , Html.Attributes.value ""
-                , Html.Events.onInput
-                    (\newFieldName ->
-                        TObject
-                            { obj
-                                | fields = obj.fields ++ [ ( newFieldName, { type_ = TNull, required = True, nullable = False } ) ]
-                            }
+                , Html.Events.onClick
+                    (TObject
+                        { obj
+                            | fields = obj.fields ++ [ ( "", { type_ = TNull, required = True, nullable = False } ) ]
+                        }
                     )
                 ]
-                []
+                [ Html.text "➕ New field" ]
 
         additionalPropertiesViews : List (Html Type)
         additionalPropertiesViews =

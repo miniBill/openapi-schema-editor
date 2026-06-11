@@ -215,7 +215,15 @@ editor typeNames t =
                             [ Html.text "$ref: "
                             , Theme.select
                                 (List.map
-                                    (\typeName -> ( typeName, TRef typeName ))
+                                    (\typeName ->
+                                        ( if String.isEmpty typeName then
+                                            "<root>"
+
+                                          else
+                                            typeName
+                                        , TRef typeName
+                                        )
+                                    )
                                     typeNames
                                 )
                                 t
@@ -225,21 +233,30 @@ editor typeNames t =
 
                 TOneOf children ->
                     ( { default | oneOf = children }
-                    , children
-                        |> List.indexedMap
-                            (\i child ->
-                                [ Html.div [] []
-                                , editor typeNames child
-                                    |> Html.map
-                                        (\newChild ->
-                                            TOneOf (List.Extra.setAt i newChild children)
-                                        )
-                                , Html.button
-                                    [ Html.Events.onClick (TOneOf (List.Extra.removeAt i children)) ]
-                                    [ Html.text "🗑️" ]
-                                ]
+                    , Html.button
+                        [ Html.Attributes.style "grid-column" "1 / span 3"
+                        , Html.Events.onClick
+                            (TOneOf
+                                (children ++ [ TRef "" ])
                             )
-                        |> List.concat
+                        ]
+                        [ Html.text "➕ New alternative" ]
+                        :: (children
+                                |> List.indexedMap
+                                    (\i child ->
+                                        [ Html.div [] []
+                                        , editor typeNames child
+                                            |> Html.map
+                                                (\newChild ->
+                                                    TOneOf (List.Extra.setAt i newChild children)
+                                                )
+                                        , Html.button
+                                            [ Html.Events.onClick (TOneOf (List.Extra.removeAt i children)) ]
+                                            [ Html.text "🗑️" ]
+                                        ]
+                                    )
+                                |> List.concat
+                           )
                         |> Html.div
                             [ Html.Attributes.style "display" "grid"
                             , Html.Attributes.style "gap" "4px"

@@ -150,8 +150,8 @@ fieldToString ( fieldName, field ) =
             fieldName ++ "?: " ++ toString field.type_ ++ "?"
 
 
-editor : Type -> Html Type
-editor t =
+editor : List String -> Type -> Html Type
+editor typeNames t =
     let
         default : Extracted
         default =
@@ -160,11 +160,11 @@ editor t =
         ( extracted, additional ) =
             case t of
                 TObject obj ->
-                    objectEditor obj default
+                    objectEditor typeNames obj default
 
                 TList list ->
                     ( { default | list = Just list }
-                    , [ Html.map TList (editor list) ]
+                    , [ Html.map TList (editor typeNames list) ]
                     )
 
                 TString str ->
@@ -187,11 +187,12 @@ editor t =
                     , [ Html.label
                             [ Html.Attributes.style "white-space" "no-wrap" ]
                             [ Html.text "$ref: "
-                            , Html.input
-                                [ Html.Attributes.value name
-                                , Html.Events.onInput TRef
-                                ]
-                                []
+                            , Theme.select
+                                (List.map
+                                    (\typeName -> ( typeName, TRef typeName ))
+                                    typeNames
+                                )
+                                t
                             ]
                       ]
                     )
@@ -202,7 +203,7 @@ editor t =
                         |> List.indexedMap
                             (\i child ->
                                 [ Html.div [] []
-                                , editor child
+                                , editor typeNames child
                                     |> Html.map
                                         (\newChild ->
                                             TOneOf (List.Extra.setAt i newChild children)
@@ -321,8 +322,8 @@ defaultExtracted t =
     }
 
 
-objectEditor : ObjectData -> Extracted -> ( Extracted, List (Html Type) )
-objectEditor obj default =
+objectEditor : List String -> ObjectData -> Extracted -> ( Extracted, List (Html Type) )
+objectEditor typeNames obj default =
     let
         fieldsViews : List (Html Type)
         fieldsViews =
@@ -345,7 +346,7 @@ objectEditor obj default =
                     )
                 ]
                 []
-            , editor field.type_
+            , editor typeNames field.type_
                 |> Html.map
                     (\newType ->
                         TObject

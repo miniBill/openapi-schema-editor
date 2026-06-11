@@ -108,6 +108,11 @@ view model =
 
 viewTypes : Dict String Type -> List (Html Msg)
 viewTypes types =
+    let
+        typeNames : List String
+        typeNames =
+            Dict.keys types
+    in
     button
         [ onClick AddType
         , style "grid-column" "1 / span 3"
@@ -116,18 +121,18 @@ viewTypes types =
         :: (types
                 |> Dict.update "" (Maybe.withDefault TNull >> Just)
                 |> Dict.toList
-                |> List.concatMap viewType
+                |> List.concatMap (viewType typeNames)
            )
 
 
-viewType : ( String, Type ) -> List (Html Msg)
-viewType ( name, type_ ) =
+viewType : List String -> ( String, Type ) -> List (Html Msg)
+viewType typeNames ( name, type_ ) =
     [ if String.isEmpty name then
         Html.p [] [ Html.text "<root>" ]
 
       else
         Html.input [ onInput (RenameType name), value name ] []
-    , Html.map (Type name) (Type.editor type_)
+    , Html.map (Type name) (Type.editor typeNames type_)
     , if String.isEmpty name then
         Html.div [] []
 
@@ -254,8 +259,8 @@ findProblems t js =
 
         jsHead :: _ ->
             let
-                mismatch : Type -> List (Html Type)
-                mismatch suggested =
+                mismatch : Maybe String -> Type -> List (Html Type)
+                mismatch problem suggested =
                     [ div
                         [ style "padding" "2px"
                         , style "border" "1px solid gray"
@@ -263,7 +268,19 @@ findProblems t js =
                         , style "flex-direction" "column"
                         , style "gap" "4px"
                         ]
-                        [ p
+                        [ case problem of
+                            Nothing ->
+                                Html.text ""
+
+                            Just problemString ->
+                                p
+                                    [ style "font-family" "monospace"
+                                    , style "overflow-wrap" "break-word"
+                                    , style "max-width" "40vw"
+                                    , style "white-space" "pre-wrap"
+                                    ]
+                                    [ text problemString ]
+                        , p
                             [ style "font-family" "monospace"
                             , style "overflow-wrap" "break-word"
                             , style "max-width" "40vw"
@@ -363,6 +380,7 @@ findProblems t js =
 
                         (Type.UnexpectedField fieldName { found }) :: _ ->
                             mismatch
+                                (Just ("Unexpected field " ++ fieldName))
                                 (TObject
                                     { data
                                         | fields =
@@ -379,6 +397,7 @@ findProblems t js =
 
                         (Type.WrongFieldType fieldName { expected, found }) :: _ ->
                             mismatch
+                                (Just ("Wrong type for field " ++ fieldName))
                                 (TObject
                                     { data
                                         | fields =
@@ -394,7 +413,7 @@ findProblems t js =
                                 )
 
                 _ ->
-                    mismatch (suggestType jsHead)
+                    mismatch Nothing (suggestType jsHead)
 
 
 cut : Json -> Json

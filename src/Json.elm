@@ -1,7 +1,8 @@
-module Json exposing (Json(..), decoder)
+module Json exposing (Json(..), decoder, encode)
 
 import Dict exposing (Dict)
 import Json.Decode exposing (Decoder)
+import Json.Encode
 
 
 type Json
@@ -27,3 +28,31 @@ decoder =
         , Json.Decode.map Bool Json.Decode.bool
         , Json.Decode.null Null
         ]
+
+
+encode : Json -> Json.Encode.Value
+encode json =
+    case json of
+        List items ->
+            Json.Encode.list encode items
+
+        Int v ->
+            Json.Encode.int v
+
+        Float v ->
+            Json.Encode.float v
+
+        String v ->
+            Json.Encode.string v
+
+        Bool v ->
+            Json.Encode.bool v
+
+        Null ->
+            Json.Encode.null
+
+        Object d ->
+            d
+                |> Dict.toList
+                |> List.map (\( k, v ) -> ( k, encode v ))
+                |> Json.Encode.object

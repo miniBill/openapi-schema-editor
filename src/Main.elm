@@ -300,7 +300,7 @@ findProblems maybeType js =
                             [ text "Got "
                             , jsHead
                                 |> cut
-                                |> encodeJson
+                                |> Json.encode
                                 |> Json.Encode.encode 0
                                 |> String.Extra.ellipsis 1000
                                 |> text
@@ -560,38 +560,10 @@ update msg model =
         DownloadedJson (Ok json) ->
             ( { model
                 | json = Ok json
-                , input = Json.Encode.encode 2 (encodeJson json)
+                , input = Json.Encode.encode 2 (Json.encode json)
               }
             , Cmd.none
             )
-
-
-encodeJson : Json -> Json.Encode.Value
-encodeJson json =
-    case json of
-        List items ->
-            Json.Encode.list encodeJson items
-
-        Int v ->
-            Json.Encode.int v
-
-        Float v ->
-            Json.Encode.float v
-
-        String v ->
-            Json.Encode.string v
-
-        Bool v ->
-            Json.Encode.bool v
-
-        Null ->
-            Json.Encode.null
-
-        Object d ->
-            d
-                |> Dict.toList
-                |> List.map (\( k, v ) -> ( k, encodeJson v ))
-                |> Json.Encode.object
 
 
 subscriptions : Model -> Sub Msg

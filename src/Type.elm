@@ -126,7 +126,7 @@ toString t =
                 Nothing ->
                     case data.pattern of
                         Just p ->
-                            "/" ++ String.slice 1 -1 (escape p) ++ "/"
+                            "/" ++ p ++ "/"
 
                         Nothing ->
                             case data.format of

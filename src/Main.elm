@@ -377,7 +377,7 @@ findProblems maybeType js =
 
                         (Type.UnexpectedField fieldName { found }) :: _ ->
                             mismatch
-                                (Just ("Unexpected field " ++ fieldName))
+                                (Just ("Unexpected field " ++ fieldName ++ " of type " ++ Type.toString (Type.suggest found)))
                                 (TObject
                                     { data
                                         | fields =

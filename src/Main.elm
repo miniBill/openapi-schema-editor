@@ -203,7 +203,13 @@ viewCurrentTab model problems =
                     usedList
                         |> List.map
                             (\used ->
-                                button [ onClick (SelectType used) ] [ text used ]
+                                button [ onClick (SelectType used) ]
+                                    [ if String.isEmpty used then
+                                        text "<root>"
+
+                                      else
+                                        text used
+                                    ]
                             )
                         |> List.intersperse (text " ")
                         |> (::) (text "Used by ")

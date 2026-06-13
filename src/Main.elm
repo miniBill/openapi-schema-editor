@@ -38,12 +38,14 @@ type Msg
     | DownloadedJson (Result Http.Error Json)
     | AddType
     | RemoveType String
-    | Save
-    | Load
-    | SelectedFile File
-    | ReadFile String
+    | SaveSchema
+    | LoadSchema
+    | SelectedSchemaFile File
+    | ReadSchema String
     | SelectType String
     | SortFields
+    | LoadInput
+    | SelectedInputFile File
 
 
 main : Program () Model Msg
@@ -72,57 +74,51 @@ init _ =
 
 view : Model -> Html Msg
 view model =
+    let
+        problems : Dict String (List (Html Msg))
+        problems =
+            case model.json of
+                Ok j ->
+                    findProblems model.types j
+
+                Err _ ->
+                    Dict.empty
+    in
     main_
-        [ style "display" "grid"
-        , style "grid-template-columns" "auto auto"
+        [ style "display" "flex"
         , style "padding" "8px"
         , style "gap" "8px"
         , style "height" "100dvh"
+        , style "flex-direction" "column"
         ]
-        [ div
-            [ style "grid-column" "1 / span 2"
-            ]
-            [ button
-                [ onClick Save
-                ]
-                [ text "Save" ]
-            , text " "
-            , button
-                [ onClick Load
-                ]
-                [ text "Load" ]
-            , text " "
-            , button
-                [ onClick SortFields
-                ]
-                [ text "SortFields" ]
-            ]
-        , textarea
-            [ value model.input
-            , onInput Input
-            , style "font-family" "monospace"
-            , style "height" "calc(100dvh - 48px)"
-            , style "overflow-y" "scroll"
-            ]
-            []
-        , let
-            problems : Dict String (List (Html Msg))
-            problems =
-                case model.json of
-                    Ok j ->
-                        findProblems model.types j
+        [ viewToolbar
+        , viewTabs (Dict.keys model.types) model.selectedType problems
+        , viewCurrentTab model problems
+        ]
 
-                    Err _ ->
-                        Dict.empty
-          in
-          div
-            [ style "display" "flex"
-            , style "flex-direction" "column"
-            , style "gap" "4px"
+
+viewToolbar : Html Msg
+viewToolbar =
+    div []
+        [ button
+            [ onClick SaveSchema
             ]
-            [ viewTabs (Dict.keys model.types) model.selectedType problems
-            , viewCurrentTab model problems
+            [ text "Save schema" ]
+        , text " "
+        , button
+            [ onClick LoadSchema
             ]
+            [ text "Load schema" ]
+        , text " "
+        , button
+            [ onClick LoadInput
+            ]
+            [ text "Load input" ]
+        , text " "
+        , button
+            [ onClick SortFields
+            ]
+            [ text "SortFields" ]
         ]
 
 
@@ -710,16 +706,22 @@ update msg model =
             , Cmd.none
             )
 
-        Save ->
+        SaveSchema ->
             ( model, File.Download.string "openapi-schema-types.json" "application/json" (Codec.encodeToString 2 typesCodec model.types) )
 
-        Load ->
-            ( model, File.Select.file [ "application/json" ] SelectedFile )
+        LoadSchema ->
+            ( model, File.Select.file [ "application/json" ] SelectedSchemaFile )
 
-        SelectedFile file ->
-            ( model, File.toString file |> Task.perform ReadFile )
+        LoadInput ->
+            ( model, File.Select.file [ "application/json" ] SelectedInputFile )
 
-        ReadFile file ->
+        SelectedSchemaFile file ->
+            ( model, File.toString file |> Task.perform ReadSchema )
+
+        SelectedInputFile file ->
+            ( model, File.toString file |> Task.perform Input )
+
+        ReadSchema file ->
             case Codec.decodeString typesCodec file of
                 Err _ ->
                     ( model, Cmd.none )

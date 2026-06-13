@@ -721,16 +721,20 @@ matchesString { pattern, const, format } s =
                 Err DoesNotMatchPattern
 
         ( Nothing, Nothing, Just f ) ->
-            case Dict.get f formats of
-                Just isMatch ->
-                    if isMatch s then
-                        Ok ()
+            if String.startsWith "Id " f then
+                Ok ()
 
-                    else
-                        Err (DoesNotMatchFormat f)
+            else
+                case Dict.get f formats of
+                    Just isMatch ->
+                        if isMatch s then
+                            Ok ()
 
-                Nothing ->
-                    Err (UnknownFormat f)
+                        else
+                            Err (DoesNotMatchFormat f)
+
+                    Nothing ->
+                        Err (UnknownFormat f)
 
         ( Nothing, Nothing, Nothing ) ->
             Ok ()

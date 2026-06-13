@@ -735,9 +735,9 @@ matchesString { pattern, const, format } s =
 
 formats : Dict String (String -> Bool)
 formats =
-    [ ( "date-time", \s -> Parser.Advanced.run Rfc3339.dateTimeOffsetParser s |> Result.Extra.isOk )
-    , ( "uri", \s -> Url.fromString s |> Maybe.Extra.isJust )
+    [ ( "uri", \s -> Url.fromString s |> Maybe.Extra.isJust )
     , ( "html", \s -> String.contains "</p>" s )
+    , ( "date-time", \s -> Parser.Advanced.run Rfc3339.dateTimeOffsetParser s |> Result.Extra.isOk )
     ]
         |> Dict.fromList
 

@@ -737,6 +737,7 @@ formats : Dict String (String -> Bool)
 formats =
     [ ( "date-time", \s -> Parser.Advanced.run Rfc3339.dateTimeOffsetParser s |> Result.Extra.isOk )
     , ( "uri", \s -> Url.fromString s |> Maybe.Extra.isJust )
+    , ( "html", \s -> String.contains "</p>" s )
     ]
         |> Dict.fromList
 

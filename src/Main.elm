@@ -201,7 +201,16 @@ viewCurrentTab model problems =
 
                 used ->
                     p [] [ text ("Used by " ++ String.join ", " used) ]
-            , Html.map (Type model.selectedType) (Type.editor (Dict.keys model.types) type_)
+            , Html.map
+                (\v ->
+                    case v of
+                        Type.Type t ->
+                            Type model.selectedType t
+
+                        Type.GoTo ref ->
+                            SelectType ref
+                )
+                (Type.editor (Dict.keys model.types) type_)
             , div []
                 (case model.json of
                     Err e ->

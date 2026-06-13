@@ -2,6 +2,7 @@ module Type exposing
     ( AdditionalProperties(..)
     , Extracted
     , Field
+    , GoToOrType(..)
     , ObjectData
     , ObjectMatchProblem(..)
     , StringData
@@ -31,6 +32,11 @@ import Result.Extra
 import Rfc3339
 import Theme
 import Url
+
+
+type GoToOrType
+    = GoTo String
+    | Type Type
 
 
 type Type
@@ -183,7 +189,7 @@ fieldToString ( fieldName, field ) =
             fieldName ++ "?: " ++ toString field.type_ ++ "?"
 
 
-editor : List String -> Type -> Html Type
+editor : List String -> Type -> Html GoToOrType
 editor typeNames t =
     let
         default : Extracted
@@ -198,7 +204,7 @@ editor typeNames t =
                 TList list ->
                     ( { default | list = Just list }
                     , Html.text ""
-                    , [ Html.map TList (editor typeNames list) ]
+                    , [ mapEditor TList (editor typeNames list) ]
                     )
 
                 TString str ->
@@ -236,6 +242,9 @@ editor typeNames t =
                                     typeNames
                                 )
                                 t
+                                |> Html.map Type
+                            , Html.text " "
+                            , Html.button [ Html.Events.onClick (GoTo name) ] [ Html.text "➡️" ]
                             ]
                       ]
                     )
@@ -245,8 +254,10 @@ editor typeNames t =
                     , Html.button
                         [ Html.Attributes.style "grid-column" "1 / span 3"
                         , Html.Events.onClick
-                            (TOneOf
-                                (children ++ [ TRef "" ])
+                            (Type
+                                (TOneOf
+                                    (children ++ [ TRef "" ])
+                                )
                             )
                         ]
                         [ Html.text "➕ New alternative" ]
@@ -254,12 +265,12 @@ editor typeNames t =
                         |> List.indexedMap
                             (\i child ->
                                 [ editor typeNames child
-                                    |> Html.map
+                                    |> mapEditor
                                         (\newChild ->
                                             TOneOf (List.Extra.setAt i newChild children)
                                         )
                                 , Html.button
-                                    [ Html.Events.onClick (TOneOf (List.Extra.removeAt i children)) ]
+                                    [ Html.Events.onClick (Type (TOneOf (List.Extra.removeAt i children))) ]
                                     [ Html.text "🗑️" ]
                                 ]
                             )
@@ -277,8 +288,10 @@ editor typeNames t =
                     , Html.button
                         [ Html.Attributes.style "grid-column" "1 / span 3"
                         , Html.Events.onClick
-                            (TEnum
-                                (children ++ [ "" ])
+                            (Type
+                                (TEnum
+                                    (children ++ [ "" ])
+                                )
                             )
                         ]
                         [ Html.text "➕ New option" ]
@@ -288,13 +301,13 @@ editor typeNames t =
                                 [ Html.input
                                     [ Html.Events.onInput
                                         (\newChild ->
-                                            TEnum (List.Extra.setAt i newChild children)
+                                            Type (TEnum (List.Extra.setAt i newChild children))
                                         )
                                     , Html.Attributes.value child
                                     ]
                                     []
                                 , Html.button
-                                    [ Html.Events.onClick (TEnum (List.Extra.removeAt i children)) ]
+                                    [ Html.Events.onClick (Type (TEnum (List.Extra.removeAt i children))) ]
                                     [ Html.text "🗑️" ]
                                 ]
                             )
@@ -339,16 +352,31 @@ editor typeNames t =
                     |> List.map (\k -> ( toShortString k, k ))
                 )
                 t
+                |> Html.map Type
             , inline
             ]
             :: additional
         )
 
 
-stringEditor : StringData -> Extracted -> ( Extracted, Html Type, List (Html Type) )
+mapEditor : (Type -> Type) -> Html GoToOrType -> Html GoToOrType
+mapEditor f h =
+    Html.map
+        (\v ->
+            case v of
+                GoTo _ ->
+                    v
+
+                Type t ->
+                    Type (f t)
+        )
+        h
+
+
+stringEditor : StringData -> Extracted -> ( Extracted, Html GoToOrType, List (Html GoToOrType) )
 stringEditor str default =
     let
-        checkboxedInput : String -> Maybe String -> (Maybe String -> StringData) -> List (Html Type)
+        checkboxedInput : String -> Maybe String -> (Maybe String -> StringData) -> List (Html GoToOrType)
         checkboxedInput label value toMsg =
             [ Html.label
                 [ Html.Attributes.style "display" "flex"
@@ -363,13 +391,15 @@ stringEditor str default =
                     , Html.Attributes.checked (value /= Nothing)
                     , Html.Events.onCheck
                         (\newValue ->
-                            TString
-                                (toMsg
-                                    (if newValue then
-                                        Just ""
+                            Type
+                                (TString
+                                    (toMsg
+                                        (if newValue then
+                                            Just ""
 
-                                     else
-                                        Nothing
+                                         else
+                                            Nothing
+                                        )
                                     )
                                 )
                         )
@@ -377,7 +407,7 @@ stringEditor str default =
                     []
                 ]
             , Html.input
-                [ Html.Events.onInput (\newValue -> TString (toMsg (Just newValue)))
+                [ Html.Events.onInput (\newValue -> Type (TString (toMsg (Just newValue))))
                 , Html.Attributes.value (Maybe.withDefault "" value)
                 ]
                 []
@@ -418,18 +448,18 @@ defaultExtracted t =
     }
 
 
-objectEditor : List String -> ObjectData -> Extracted -> ( Extracted, Html Type, List (Html Type) )
+objectEditor : List String -> ObjectData -> Extracted -> ( Extracted, Html GoToOrType, List (Html GoToOrType) )
 objectEditor typeNames obj default =
     let
-        fieldsViews : List (Html Type)
+        fieldsViews : List (Html GoToOrType)
         fieldsViews =
             List.indexedMap viewField obj.fields
                 |> List.concat
 
-        viewField : Int -> ( String, Field ) -> List (Html Type)
+        viewField : Int -> ( String, Field ) -> List (Html GoToOrType)
         viewField i ( fieldName, field ) =
             let
-                checkbox : String -> Bool -> (Bool -> Field) -> Html Type
+                checkbox : String -> Bool -> (Bool -> Field) -> Html GoToOrType
                 checkbox label value setter =
                     Html.label []
                         [ Html.text label
@@ -438,13 +468,15 @@ objectEditor typeNames obj default =
                             , Html.Attributes.checked value
                             , Html.Events.onCheck
                                 (\newValue ->
-                                    TObject
-                                        { obj
-                                            | fields =
-                                                List.Extra.setAt i
-                                                    ( fieldName, setter newValue )
-                                                    obj.fields
-                                        }
+                                    Type
+                                        (TObject
+                                            { obj
+                                                | fields =
+                                                    List.Extra.setAt i
+                                                        ( fieldName, setter newValue )
+                                                        obj.fields
+                                            }
+                                        )
                                 )
                             ]
                             []
@@ -459,13 +491,15 @@ objectEditor typeNames obj default =
                     [ Html.Attributes.value fieldName
                     , Html.Events.onInput
                         (\newFieldName ->
-                            TObject
-                                { obj
-                                    | fields =
-                                        List.Extra.setAt i
-                                            ( newFieldName, field )
-                                            obj.fields
-                                }
+                            Type
+                                (TObject
+                                    { obj
+                                        | fields =
+                                            List.Extra.setAt i
+                                                ( newFieldName, field )
+                                                obj.fields
+                                    }
+                                )
                         )
                     ]
                     []
@@ -473,7 +507,7 @@ objectEditor typeNames obj default =
                 , checkbox "Nullable" field.nullable (\newNullable -> { field | nullable = newNullable })
                 ]
             , editor typeNames field.type_
-                |> Html.map
+                |> mapEditor
                     (\newType ->
                         TObject
                             { obj
@@ -485,30 +519,34 @@ objectEditor typeNames obj default =
                     )
             , Html.button
                 [ Html.Events.onClick
-                    (TObject
-                        { obj
-                            | fields =
-                                List.Extra.removeAt i obj.fields
-                        }
+                    (Type
+                        (TObject
+                            { obj
+                                | fields =
+                                    List.Extra.removeAt i obj.fields
+                            }
+                        )
                     )
                 ]
                 [ Html.text "🗑️" ]
             ]
 
-        newFieldView : Html Type
+        newFieldView : Html GoToOrType
         newFieldView =
             Html.button
                 [ Html.Attributes.style "grid-column" "1 / span 3"
                 , Html.Events.onClick
-                    (TObject
-                        { obj
-                            | fields = obj.fields ++ [ ( "", { type_ = TNull, required = True, nullable = False } ) ]
-                        }
+                    (Type
+                        (TObject
+                            { obj
+                                | fields = obj.fields ++ [ ( "", { type_ = TNull, required = True, nullable = False } ) ]
+                            }
+                        )
                     )
                 ]
                 [ Html.text "➕ New field" ]
 
-        additionalPropertiesViews : List (Html Type)
+        additionalPropertiesViews : List (Html GoToOrType)
         additionalPropertiesViews =
             [ Theme.select []
                 [ ( "No additional properties"
@@ -542,6 +580,7 @@ objectEditor typeNames obj default =
                   )
                 ]
                 (TObject obj)
+                |> Html.map Type
             ]
     in
     ( { default | obj = Just obj }

@@ -19,6 +19,7 @@ import List.Extra
 import Set exposing (Set)
 import String.Extra
 import Task
+import Theme
 import Type exposing (AdditionalProperties(..), Type(..))
 
 
@@ -73,13 +74,13 @@ view : Model -> Html Msg
 view model =
     main_
         [ style "display" "grid"
-        , style "grid-template-columns" "auto auto auto"
+        , style "grid-template-columns" "auto auto"
         , style "padding" "8px"
         , style "gap" "8px"
         , style "height" "100dvh"
         ]
         [ div
-            [ style "grid-column" "1 / span 3"
+            [ style "grid-column" "1 / span 2"
             ]
             [ button
                 [ onClick Save
@@ -179,7 +180,7 @@ viewTab name selected hasProblems =
             Html.text ""
 
           else
-            button [ onClick (RemoveType name) ] [ text "🗑️" ]
+            Theme.deleteButton (RemoveType name)
         ]
 
 

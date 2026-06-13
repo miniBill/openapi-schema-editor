@@ -269,16 +269,14 @@ editor typeNames t =
                                         (\newChild ->
                                             TOneOf (List.Extra.setAt i newChild children)
                                         )
-                                , Html.button
-                                    [ Html.Events.onClick (Type (TOneOf (List.Extra.removeAt i children))) ]
-                                    [ Html.text "🗑️" ]
+                                , Theme.deleteButton (Type (TOneOf (List.Extra.removeAt i children)))
                                 ]
                             )
                         |> List.concat
                         |> Html.div
                             [ Html.Attributes.style "display" "grid"
                             , Html.Attributes.style "gap" "4px"
-                            , Html.Attributes.style "grid-template-columns" "auto auto"
+                            , Html.Attributes.style "grid-template-columns" "1fr auto"
                             ]
                         |> List.singleton
                     )
@@ -306,16 +304,14 @@ editor typeNames t =
                                     , Html.Attributes.value child
                                     ]
                                     []
-                                , Html.button
-                                    [ Html.Events.onClick (Type (TEnum (List.Extra.removeAt i children))) ]
-                                    [ Html.text "🗑️" ]
+                                , Theme.deleteButton (Type (TEnum (List.Extra.removeAt i children)))
                                 ]
                             )
                         |> List.concat
                         |> Html.div
                             [ Html.Attributes.style "display" "grid"
                             , Html.Attributes.style "gap" "4px"
-                            , Html.Attributes.style "grid-template-columns" "auto auto"
+                            , Html.Attributes.style "grid-template-columns" "1fr auto"
                             ]
                         |> List.singleton
                     )
@@ -517,18 +513,15 @@ objectEditor typeNames obj default =
                                         obj.fields
                             }
                     )
-            , Html.button
-                [ Html.Events.onClick
-                    (Type
-                        (TObject
-                            { obj
-                                | fields =
-                                    List.Extra.removeAt i obj.fields
-                            }
-                        )
+            , Theme.deleteButton
+                (Type
+                    (TObject
+                        { obj
+                            | fields =
+                                List.Extra.removeAt i obj.fields
+                        }
                     )
-                ]
-                [ Html.text "🗑️" ]
+                )
             ]
 
         newFieldView : Html GoToOrType
@@ -588,7 +581,7 @@ objectEditor typeNames obj default =
     , Html.div
         [ Html.Attributes.style "display" "grid"
         , Html.Attributes.style "gap" "4px"
-        , Html.Attributes.style "grid-template-columns" "auto auto auto"
+        , Html.Attributes.style "grid-template-columns" "auto 1fr auto"
         ]
         fieldsViews
         :: additionalPropertiesViews

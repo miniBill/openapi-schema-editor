@@ -1,4 +1,4 @@
-module Theme exposing (select)
+module Theme exposing (deleteButton, select)
 
 import Html exposing (Attribute, Html)
 import Html.Attributes
@@ -33,3 +33,11 @@ select attrs selectOptions currentValue =
                 )
                 :: attrs
             )
+
+
+deleteButton : msg -> Html msg
+deleteButton msg =
+    Html.button
+        [ Html.Events.onClick msg
+        ]
+        [ Html.text "🗑️" ]

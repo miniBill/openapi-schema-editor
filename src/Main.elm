@@ -120,9 +120,9 @@ view model =
             , style "flex-direction" "column"
             , style "gap" "4px"
             ]
-            (viewTabs (Dict.keys model.types) model.selectedType problems
-                :: viewCurrentTab model problems
-            )
+            [ viewTabs (Dict.keys model.types) model.selectedType problems
+            , viewCurrentTab model problems
+            ]
         ]
 
 
@@ -184,65 +184,75 @@ viewTab name selected hasProblems =
         ]
 
 
-viewCurrentTab : Model -> Dict String (List (Html Msg)) -> List (Html Msg)
+viewCurrentTab : Model -> Dict String (List (Html Msg)) -> Html Msg
 viewCurrentTab model problems =
     case Dict.get model.selectedType model.types of
         Nothing ->
-            [ Html.text "Not defined" ]
+            Html.text "Not defined"
 
         Just type_ ->
-            [ if String.isEmpty model.selectedType then
-                p [] [ text "" ]
-
-              else
-                Html.input [ onInput (RenameType model.selectedType), value model.selectedType ] []
-            , case usedBy model.types model.selectedType of
-                [] ->
+            Html.div
+                [ style "display" "grid"
+                , style "gap" "4px"
+                , style "grid-template-columns" "auto 1fr"
+                ]
+                [ if String.isEmpty model.selectedType then
                     text ""
 
-                usedList ->
-                    usedList
-                        |> List.map
-                            (\used ->
-                                button [ onClick (SelectType used) ]
-                                    [ if String.isEmpty used then
-                                        text "<root>"
+                  else
+                    Html.input
+                        [ style "grid-column" "1 / span 2"
+                        , onInput (RenameType model.selectedType)
+                        , value model.selectedType
+                        ]
+                        []
+                , case usedBy model.types model.selectedType of
+                    [] ->
+                        text ""
 
-                                      else
-                                        text used
-                                    ]
-                            )
-                        |> List.intersperse (text " ")
-                        |> (::) (text "Used by ")
-                        |> p []
-            , Html.map
-                (\v ->
-                    case v of
-                        Type.Type t ->
-                            Type model.selectedType t
-
-                        Type.GoTo ref ->
-                            SelectType ref
-                )
-                (Type.editor (Dict.keys model.types) type_)
-            , div []
-                (case model.json of
-                    Err e ->
-                        e
-                            |> Json.Decode.errorToString
-                            |> String.split "\n"
+                    usedList ->
+                        usedList
                             |> List.map
-                                (\line ->
-                                    p
-                                        [ style "font-family" "monospace" ]
-                                        [ text line ]
-                                )
+                                (\used ->
+                                    button [ onClick (SelectType used) ]
+                                        [ if String.isEmpty used then
+                                            text "<root>"
 
-                    Ok json ->
-                        Dict.get model.selectedType problems
-                            |> Maybe.withDefault []
-                )
-            ]
+                                          else
+                                            text used
+                                        ]
+                                )
+                            |> List.intersperse (text " ")
+                            |> (::) (text "Used by ")
+                            |> p [ style "grid-column" "1 / span 2" ]
+                , Html.map
+                    (\v ->
+                        case v of
+                            Type.Type t ->
+                                Type model.selectedType t
+
+                            Type.GoTo ref ->
+                                SelectType ref
+                    )
+                    (Type.editor (Dict.keys model.types) type_)
+                , div []
+                    (case model.json of
+                        Err e ->
+                            e
+                                |> Json.Decode.errorToString
+                                |> String.split "\n"
+                                |> List.map
+                                    (\line ->
+                                        p
+                                            [ style "font-family" "monospace" ]
+                                            [ text line ]
+                                    )
+
+                        Ok json ->
+                            Dict.get model.selectedType problems
+                                |> Maybe.withDefault []
+                    )
+                ]
 
 
 usedBy : Dict String Type -> String -> List String

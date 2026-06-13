@@ -199,8 +199,15 @@ viewCurrentTab model problems =
                 [] ->
                     text ""
 
-                used ->
-                    p [] [ text ("Used by " ++ String.join ", " used) ]
+                usedList ->
+                    usedList
+                        |> List.map
+                            (\used ->
+                                button [ onClick (SelectType used) ] [ text used ]
+                            )
+                        |> List.intersperse (text " ")
+                        |> (::) (text "Used by ")
+                        |> p []
             , Html.map
                 (\v ->
                     case v of

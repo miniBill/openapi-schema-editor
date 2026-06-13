@@ -428,6 +428,28 @@ objectEditor typeNames obj default =
 
         viewField : Int -> ( String, Field ) -> List (Html Type)
         viewField i ( fieldName, field ) =
+            let
+                checkbox : String -> Bool -> (Bool -> Field) -> Html Type
+                checkbox label value setter =
+                    Html.label []
+                        [ Html.text label
+                        , Html.input
+                            [ Html.Attributes.type_ "checkbox"
+                            , Html.Attributes.checked value
+                            , Html.Events.onCheck
+                                (\newValue ->
+                                    TObject
+                                        { obj
+                                            | fields =
+                                                List.Extra.setAt i
+                                                    ( fieldName, setter newValue )
+                                                    obj.fields
+                                        }
+                                )
+                            ]
+                            []
+                        ]
+            in
             [ Html.div
                 [ Html.Attributes.style "display" "flex"
                 , Html.Attributes.style "gap" "4px"
@@ -447,42 +469,8 @@ objectEditor typeNames obj default =
                         )
                     ]
                     []
-                , Html.label []
-                    [ Html.text "Required"
-                    , Html.input
-                        [ Html.Attributes.type_ "checkbox"
-                        , Html.Attributes.checked field.required
-                        , Html.Events.onCheck
-                            (\newRequired ->
-                                TObject
-                                    { obj
-                                        | fields =
-                                            List.Extra.setAt i
-                                                ( fieldName, { field | required = newRequired } )
-                                                obj.fields
-                                    }
-                            )
-                        ]
-                        []
-                    ]
-                , Html.label []
-                    [ Html.text "Nullable"
-                    , Html.input
-                        [ Html.Attributes.type_ "checkbox"
-                        , Html.Attributes.checked field.nullable
-                        , Html.Events.onCheck
-                            (\newNullable ->
-                                TObject
-                                    { obj
-                                        | fields =
-                                            List.Extra.setAt i
-                                                ( fieldName, { field | nullable = newNullable } )
-                                                obj.fields
-                                    }
-                            )
-                        ]
-                        []
-                    ]
+                , checkbox "Required" field.required (\newRequired -> { field | required = newRequired })
+                , checkbox "Nullable" field.nullable (\newNullable -> { field | nullable = newNullable })
                 ]
             , editor typeNames field.type_
                 |> Html.map

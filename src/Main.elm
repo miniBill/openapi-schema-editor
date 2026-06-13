@@ -66,7 +66,7 @@ init _ =
       , selectedType = ""
       }
     , Http.get
-        { url = "big.json"
+        { url = "small.json"
         , expect = Http.expectJson DownloadedJson Json.decoder
         }
     )

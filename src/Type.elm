@@ -1,8 +1,8 @@
 module Type exposing
     ( AdditionalProperties(..)
+    , EditorMsg(..)
     , Extracted
     , Field
-    , GoToOrType(..)
     , ObjectData
     , ObjectMatchProblem(..)
     , StringData
@@ -34,9 +34,10 @@ import Theme
 import Url
 
 
-type GoToOrType
+type EditorMsg
     = GoTo String
     | Type Type
+    | Extract Type
 
 
 type Type
@@ -189,8 +190,13 @@ fieldToString ( fieldName, field ) =
             fieldName ++ "?: " ++ toString field.type_ ++ "?"
 
 
-editor : List String -> Type -> Html GoToOrType
+editor : List String -> Type -> Html EditorMsg
 editor typeNames t =
+    editorHelp True typeNames t
+
+
+editorHelp : Bool -> List String -> Type -> Html EditorMsg
+editorHelp topLevel typeNames t =
     let
         default : Extracted
         default =
@@ -204,13 +210,13 @@ editor typeNames t =
                 TList ((TRef r) as list) ->
                     ( { default | list = list, ref = r }
                     , Html.text ""
-                    , [ mapEditor TList (editor typeNames list) ]
+                    , [ mapEditor TList (editorHelp False typeNames list) ]
                     )
 
                 TList list ->
                     ( { default | list = list }
                     , Html.text ""
-                    , [ mapEditor TList (editor typeNames list) ]
+                    , [ mapEditor TList (editorHelp False typeNames list) ]
                     )
 
                 TString str ->
@@ -270,7 +276,7 @@ editor typeNames t =
                     , children
                         |> List.indexedMap
                             (\i child ->
-                                [ editor typeNames child
+                                [ editorHelp False typeNames child
                                     |> mapEditor
                                         (\newChild ->
                                             TOneOf (List.Extra.setAt i newChild children)
@@ -321,52 +327,68 @@ editor typeNames t =
                             ]
                         |> List.singleton
                     )
+
+        mainColumn : Html EditorMsg
+        mainColumn =
+            Html.div
+                [ Html.Attributes.style "display" "flex"
+                , Html.Attributes.style "flex-direction" "column"
+                , Html.Attributes.style "gap" "4px"
+                , Html.Attributes.style "flex" "1"
+                ]
+                (Html.div
+                    [ Html.Attributes.style "display" "flex"
+                    , Html.Attributes.style "gap" "4px"
+                    ]
+                    [ Theme.select
+                        [ Html.Attributes.style "flex" "1" ]
+                        ([ TObject (Maybe.withDefault emptyObject extracted.obj)
+                         , TList extracted.list
+                         , TOneOf extracted.oneOf
+                         , TString
+                            (Maybe.withDefault
+                                { pattern = Nothing
+                                , const = Nothing
+                                , format = Nothing
+                                }
+                                extracted.string
+                            )
+                         , TInteger
+                         , TNumber
+                         , TBoolean
+                         , TNull
+                         , TRef extracted.ref
+                         , TEnum extracted.enum
+                         ]
+                            |> List.map (\k -> ( toShortString k, k ))
+                        )
+                        t
+                        |> Html.map Type
+                    , inline
+                    ]
+                    :: additional
+                )
     in
-    Html.div
-        [ Html.Attributes.style "display" "flex"
-        , Html.Attributes.style "flex-direction" "column"
-        , Html.Attributes.style "gap" "4px"
-        ]
-        (Html.div
+    if topLevel then
+        mainColumn
+
+    else
+        Html.div
             [ Html.Attributes.style "display" "flex"
             , Html.Attributes.style "gap" "4px"
             ]
-            [ Theme.select
-                [ Html.Attributes.style "flex" "1" ]
-                ([ TObject (Maybe.withDefault emptyObject extracted.obj)
-                 , TList extracted.list
-                 , TOneOf extracted.oneOf
-                 , TString
-                    (Maybe.withDefault
-                        { pattern = Nothing
-                        , const = Nothing
-                        , format = Nothing
-                        }
-                        extracted.string
-                    )
-                 , TInteger
-                 , TNumber
-                 , TBoolean
-                 , TNull
-                 , TRef extracted.ref
-                 , TEnum extracted.enum
-                 ]
-                    |> List.map (\k -> ( toShortString k, k ))
-                )
-                t
-                |> Html.map Type
-            , inline
-            ]
-            :: additional
-        )
+            [ mainColumn, Html.button [ Html.Events.onClick (Extract t) ] [ Html.text "💥" ] ]
 
 
-mapEditor : (Type -> Type) -> Html GoToOrType -> Html GoToOrType
+mapEditor : (Type -> Type) -> Html EditorMsg -> Html EditorMsg
 mapEditor f h =
     Html.map
         (\v ->
             case v of
                 GoTo _ ->
+                    v
+
+                Extract _ ->
                     v
 
                 Type t ->
@@ -375,10 +397,10 @@ mapEditor f h =
         h
 
 
-stringEditor : StringData -> Extracted -> ( Extracted, Html GoToOrType, List (Html GoToOrType) )
+stringEditor : StringData -> Extracted -> ( Extracted, Html EditorMsg, List (Html EditorMsg) )
 stringEditor str default =
     let
-        checkboxedInput : String -> Maybe String -> (Maybe String -> StringData) -> List (Html GoToOrType)
+        checkboxedInput : String -> Maybe String -> (Maybe String -> StringData) -> List (Html EditorMsg)
         checkboxedInput label value toMsg =
             [ Html.label
                 [ Html.Attributes.style "display" "flex"
@@ -450,18 +472,18 @@ defaultExtracted t =
     }
 
 
-objectEditor : List String -> ObjectData -> Extracted -> ( Extracted, Html GoToOrType, List (Html GoToOrType) )
+objectEditor : List String -> ObjectData -> Extracted -> ( Extracted, Html EditorMsg, List (Html EditorMsg) )
 objectEditor typeNames obj default =
     let
-        fieldsViews : List (Html GoToOrType)
+        fieldsViews : List (Html EditorMsg)
         fieldsViews =
             List.indexedMap viewField obj.fields
                 |> List.concat
 
-        viewField : Int -> ( String, Field ) -> List (Html GoToOrType)
+        viewField : Int -> ( String, Field ) -> List (Html EditorMsg)
         viewField i ( fieldName, field ) =
             let
-                checkbox : String -> Bool -> (Bool -> Field) -> Html GoToOrType
+                checkbox : String -> Bool -> (Bool -> Field) -> Html EditorMsg
                 checkbox label value setter =
                     Html.label []
                         [ Html.text label
@@ -508,7 +530,7 @@ objectEditor typeNames obj default =
                 , checkbox "Required" field.required (\newRequired -> { field | required = newRequired })
                 , checkbox "Nullable" field.nullable (\newNullable -> { field | nullable = newNullable })
                 ]
-            , editor typeNames field.type_
+            , editorHelp False typeNames field.type_
                 |> mapEditor
                     (\newType ->
                         TObject
@@ -530,7 +552,7 @@ objectEditor typeNames obj default =
                 )
             ]
 
-        newFieldView : Html GoToOrType
+        newFieldView : Html EditorMsg
         newFieldView =
             Html.button
                 [ Html.Attributes.style "grid-column" "1 / span 3"
@@ -545,7 +567,7 @@ objectEditor typeNames obj default =
                 ]
                 [ Html.text "➕ New field" ]
 
-        additionalPropertiesViews : List (Html GoToOrType)
+        additionalPropertiesViews : List (Html EditorMsg)
         additionalPropertiesViews =
             [ Theme.select []
                 [ ( "No additional properties"
@@ -776,7 +798,7 @@ matchesString { pattern, const, format } s =
 formats : Dict String (String -> Bool)
 formats =
     [ ( "uri", \s -> Url.fromString s |> Maybe.Extra.isJust )
-    , ( "html", \s -> String.contains "</p>" s )
+    , ( "html", \s -> String.contains "</p>" s || String.contains "<iframe" s )
     , ( "date-time", \s -> Parser.Advanced.run Rfc3339.dateTimeOffsetParser s |> Result.Extra.isOk )
     ]
         |> Dict.fromList

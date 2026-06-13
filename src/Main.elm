@@ -36,7 +36,7 @@ type Msg
     | Type String Type
     | RenameType String String
     | DownloadedJson (Result Http.Error Json)
-    | AddType
+    | AddType Type
     | RemoveType String
     | SaveSchema
     | LoadSchema
@@ -131,7 +131,14 @@ viewTabs tabs selected problems =
         ]
         (List.map (\tab -> viewTab tab (tab == selected) (Dict.member tab problems)) tabs
             ++ [ button
-                    [ onClick AddType
+                    [ onClick
+                        (AddType
+                            (TObject
+                                { fields = []
+                                , additionalProperties = Type.AdditionalPropertiesNotAllowed
+                                }
+                            )
+                        )
                     , style "grid-column" "1 / span 3"
                     ]
                     [ text "➕ New type" ]
@@ -229,6 +236,9 @@ viewCurrentTab model problems =
 
                             Type.GoTo ref ->
                                 SelectType ref
+
+                            Type.Extract t ->
+                                AddType t
                     )
                     (Type.editor (Dict.keys model.types) type_)
                 , div []
@@ -592,7 +602,7 @@ update msg model =
             , Cmd.none
             )
 
-        AddType ->
+        AddType t ->
             let
                 newKey : String
                 newKey =
@@ -615,7 +625,7 @@ update msg model =
                     in
                     go 1
             in
-            ( { model | types = Dict.insert newKey TNull model.types }, Cmd.none )
+            ( { model | types = Dict.insert newKey t model.types }, Cmd.none )
 
         Type key type_ ->
             ( { model | types = Dict.insert key type_ model.types }, Cmd.none )

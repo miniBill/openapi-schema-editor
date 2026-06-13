@@ -599,13 +599,47 @@ union : Type -> Type -> Type
 union l r =
     case ( l, r ) of
         ( TOneOf lo, TOneOf ro ) ->
-            TOneOf (List.Extra.unique (lo ++ ro))
+            if List.length lo < List.length ro then
+                TOneOf
+                    (List.foldl
+                        (\le a ->
+                            if List.member le a then
+                                a
+
+                            else
+                                le :: a
+                        )
+                        ro
+                        lo
+                    )
+
+            else
+                TOneOf
+                    (List.foldl
+                        (\re a ->
+                            if List.member re a then
+                                a
+
+                            else
+                                re :: a
+                        )
+                        lo
+                        ro
+                    )
 
         ( TOneOf lo, _ ) ->
-            TOneOf (List.Extra.unique (r :: lo))
+            if List.member r lo then
+                l
+
+            else
+                TOneOf (r :: lo)
 
         ( _, TOneOf ro ) ->
-            TOneOf (List.Extra.unique (l :: ro))
+            if List.member l ro then
+                r
+
+            else
+                TOneOf (l :: ro)
 
         _ ->
             if l == r then

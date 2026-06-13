@@ -475,7 +475,6 @@ findProblemsForType types maybeType js =
                         , paragraph
                             [ text "Got "
                             , jsHead
-                                |> cut
                                 |> Json.encode
                                 |> Json.Encode.encode 2
                                 |> text
@@ -592,31 +591,6 @@ findProblemsForType types maybeType js =
 
                 _ ->
                     mismatch Nothing (Just (Type.suggest jsHead))
-
-
-cut : Json -> Json
-cut j =
-    case j of
-        List l ->
-            List (List.map cut l)
-
-        String s ->
-            String (String.Extra.ellipsis 30 s)
-
-        Object fields ->
-            Object (Dict.map (always cut) fields)
-
-        Int _ ->
-            j
-
-        Float _ ->
-            j
-
-        Bool _ ->
-            j
-
-        Null ->
-            j
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )

@@ -332,7 +332,13 @@ buildDict seen types typeName value acc =
                     ( TObject { fields }, Object fs ) ->
                         Dict.merge
                             (\_ _ a -> a)
-                            (\_ field fieldValue a -> go field.type_ fieldValue a)
+                            (\_ field fieldValue a ->
+                                if field.nullable && fieldValue == Null then
+                                    a
+
+                                else
+                                    go field.type_ fieldValue a
+                            )
                             (\_ _ a -> a)
                             (Dict.fromList fields)
                             fs

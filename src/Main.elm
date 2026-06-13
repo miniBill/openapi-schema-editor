@@ -512,6 +512,7 @@ findProblemsForType types maybeType js =
                             , jsHead
                                 |> Json.encode
                                 |> Json.Encode.encode 2
+                                |> String.Extra.ellipsis 10000
                                 |> text
                             ]
                         ]
@@ -532,54 +533,6 @@ findProblemsForType types maybeType js =
                                     |> Just
                                 )
 
-                -- ( TList tchild, List children ) ->
-                --     children
-                --         |> List.indexedMap
-                --             (\i child ->
-                --                 matchesHelp
-                --                     (String.fromInt i :: path)
-                --                     tchild
-                --                     child
-                --             )
-                --         |> List.concat
-                -- ( TString ({ pattern, const, format } as str), String s ) ->
-                --     case Type.matchesString str s of
-                --         Err (Type.IsNotConst _) ->
-                --             mismatch path (Just t) j (Just (TString { str | const = Just s }))
-                --         Err Type.DoesNotMatchPattern ->
-                --             mismatch path (Just t) j Nothing
-                --         Err (Type.UnknownFormat f) ->
-                --             div
-                --                 [ style "padding" "2px"
-                --                 , style "border" "1px solid gray"
-                --                 ]
-                --                 [ text ("Unknown format: " ++ f) ]
-                --                 |> Err
-                --         Err (Type.DoesNotMatchFormat f) ->
-                --             div
-                --                 [ style "padding" "2px"
-                --                 , style "border" "1px solid gray"
-                --                 ]
-                --                 [ text
-                --                     ("At "
-                --                         ++ String.join "." (List.reverse path)
-                --                         ++ ", expected "
-                --                         ++ Type.toString t
-                --                         ++ ", got "
-                --                         ++ Json.Encode.encode 0 (encodeJson j)
-                --                     )
-                --                 ]
-                --                 |> Err
-                --         Ok () ->
-                --             []
-                -- ( TInteger, Int _ ) ->
-                --     []
-                -- ( TNumber, Float _ ) ->
-                --     []
-                -- ( TBoolean, Bool _ ) ->
-                --     []
-                -- ( TNull, Null ) ->
-                --     []
                 ( Just (TObject data), Object v ) ->
                     case Type.matchesObject types data v of
                         [] ->

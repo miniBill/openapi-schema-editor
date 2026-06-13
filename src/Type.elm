@@ -201,8 +201,14 @@ editor typeNames t =
                 TObject obj ->
                     objectEditor typeNames obj default
 
+                TList ((TRef r) as list) ->
+                    ( { default | list = list, ref = r }
+                    , Html.text ""
+                    , [ mapEditor TList (editor typeNames list) ]
+                    )
+
                 TList list ->
-                    ( { default | list = Just list }
+                    ( { default | list = list }
                     , Html.text ""
                     , [ mapEditor TList (editor typeNames list) ]
                     )
@@ -223,7 +229,7 @@ editor typeNames t =
                     ( default, Html.text "", [] )
 
                 TRef name ->
-                    ( { default | ref = Just name }
+                    ( { default | ref = name }
                     , Html.text ""
                     , [ Html.label
                             [ Html.Attributes.style "white-space" "no-wrap" ]
@@ -328,7 +334,7 @@ editor typeNames t =
             [ Theme.select
                 [ Html.Attributes.style "flex" "1" ]
                 ([ TObject (Maybe.withDefault emptyObject extracted.obj)
-                 , TList (Maybe.withDefault TInteger extracted.list)
+                 , TList extracted.list
                  , TOneOf extracted.oneOf
                  , TString
                     (Maybe.withDefault
@@ -342,7 +348,7 @@ editor typeNames t =
                  , TNumber
                  , TBoolean
                  , TNull
-                 , TRef (Maybe.withDefault "" extracted.ref)
+                 , TRef extracted.ref
                  , TEnum extracted.enum
                  ]
                     |> List.map (\k -> ( toShortString k, k ))
@@ -425,10 +431,10 @@ stringEditor str default =
 
 type alias Extracted =
     { obj : Maybe ObjectData
-    , list : Maybe Type
+    , list : Type
     , string : Maybe StringData
     , oneOf : List Type
-    , ref : Maybe String
+    , ref : String
     , enum : List String
     }
 
@@ -436,10 +442,10 @@ type alias Extracted =
 defaultExtracted : Type -> Extracted
 defaultExtracted t =
     { obj = Nothing
-    , list = Nothing
+    , list = TList t
     , string = Nothing
     , oneOf = [ t ]
-    , ref = Nothing
+    , ref = "<>"
     , enum = []
     }
 

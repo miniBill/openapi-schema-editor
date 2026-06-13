@@ -256,7 +256,7 @@ editorHelp topLevel typeNames t =
                                 t
                                 |> Html.map Type
                             , Html.text " "
-                            , Html.button [ Html.Events.onClick (GoTo name) ] [ Html.text "➡️" ]
+                            , Theme.goToButton (GoTo name)
                             ]
                       ]
                     )
@@ -377,7 +377,7 @@ editorHelp topLevel typeNames t =
             [ Html.Attributes.style "display" "flex"
             , Html.Attributes.style "gap" "4px"
             ]
-            [ mainColumn, Html.button [ Html.Events.onClick (Extract t) ] [ Html.text "💥" ] ]
+            [ mainColumn, Theme.extractTypeButton (Extract t) ]
 
 
 mapEditor : (Type -> Type) -> Html EditorMsg -> Html EditorMsg

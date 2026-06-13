@@ -1,4 +1,4 @@
-module Theme exposing (deleteButton, select)
+module Theme exposing (deleteButton, extractTypeButton, goToButton, select)
 
 import Html exposing (Attribute, Html)
 import Html.Attributes
@@ -39,5 +39,24 @@ deleteButton : msg -> Html msg
 deleteButton msg =
     Html.button
         [ Html.Events.onClick msg
+        , Html.Attributes.title "Delete"
         ]
         [ Html.text "🗑️" ]
+
+
+extractTypeButton : msg -> Html msg
+extractTypeButton msg =
+    Html.button
+        [ Html.Events.onClick msg
+        , Html.Attributes.title "Extract type to top level"
+        ]
+        [ Html.text "💥" ]
+
+
+goToButton : msg -> Html msg
+goToButton msg =
+    Html.button
+        [ Html.Events.onClick msg
+        , Html.Attributes.title "Go to definition"
+        ]
+        [ Html.text "➡️" ]
